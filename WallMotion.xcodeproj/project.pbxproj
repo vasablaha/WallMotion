@@ -34,28 +34,16 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				Models/WallpaperManager.swift,
 			);
 			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		3516367F2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "Copy Bundle Resources" phase from "WallMotion" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 3516364E2E23F6FC00C8C331 /* Resources */;
-			membershipExceptions = (
-				Models/WallpaperManager.swift,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		351636522E23F6FC00C8C331 /* WallMotion */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				3516367E2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "WallMotion" target */,
-				3516367F2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "Copy Bundle Resources" phase from "WallMotion" target */,
 			);
 			path = WallMotion;
 			sourceTree = "<group>";
