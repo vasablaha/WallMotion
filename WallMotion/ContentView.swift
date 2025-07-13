@@ -53,7 +53,7 @@ class WallpaperManager: ObservableObject {
     @Published var availableWallpapers: [String] = []
     @Published var detectedWallpaper: String = ""
     @Published var videoLibrary: [WallpaperVideo] = []
-    @Published var selectedCategory: VideoCategory = .nature
+    @Published var selectedCategory: VideoCategory = .custom // Changed to custom as default since categories are hidden
     
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
     
@@ -189,7 +189,7 @@ class WallpaperManager: ObservableObject {
         
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: wallpaperPath)
-            let movFiles = files.filter { $0.hasSuffix(".mov") }
+            let movFiles = files.filter { $0.hasSuffix(".mov") && !$0.contains(".backup") }
             
             print("📄 Found \(movFiles.count) .mov files in folder")
             
@@ -283,16 +283,17 @@ class WallpaperManager: ObservableObject {
     }
     
     private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
-        print("🔐 Requesting admin privileges for batch operation...")
+        print("🔐 Requesting admin privileges for complete cleanup operation...")
         
         await MainActor.run {
-            progressCallback(0.5, "Backing up original...")
+            progressCallback(0.5, "Cleaning and installing wallpaper...")
         }
         
         let batchScript = """
         do shell script "
         cp '\(targetPath)' '\(backupPath)'
-        rm '\(targetPath)'
+        find '\(wallpaperPath)' -name '*.mov' -type f -delete
+        find '\(wallpaperPath)' -name '*.backup.*' -type f -delete
         cp '\(tempVideoPath)' '\(targetPath)'
         killall WallpaperAgent 2>/dev/null || true
         " with administrator privileges
@@ -308,7 +309,7 @@ class WallpaperManager: ObservableObject {
                     print("❌ Batch operation failed: \(error)")
                     continuation.resume(returning: false)
                 } else {
-                    print("✅ Batch operation succeeded!")
+                    print("✅ Complete cleanup successful! All old files removed.")
                     continuation.resume(returning: true)
                 }
             }
@@ -376,7 +377,11 @@ struct ContentView: View {
             Divider()
                 .padding(.horizontal)
             
-            categorySection
+            // Categories section - HIDDEN for now
+            // categorySection
+            
+            // Custom video upload section
+            customUploadSection
             
             Divider()
                 .padding(.horizontal)
@@ -422,6 +427,7 @@ struct ContentView: View {
         .padding(.vertical, 30)
     }
     
+    // MARK: - Categories section (hidden)
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Categories")
@@ -447,28 +453,72 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
+        }
+        .padding(.vertical)
+    }
+    
+    // MARK: - Custom Upload Section (main focus now)
+    private var customUploadSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Upload Video")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .padding(.horizontal)
             
-            // Custom Video Button
             Button(action: { showingFilePicker = true }) {
                 HStack {
                     Image(systemName: "folder.badge.plus")
-                        .foregroundColor(.orange)
-                    Text("Custom Video")
-                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                        .font(.title2)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Choose Video File")
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        Text("MP4, MOV, or other video formats")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
                     Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
                 }
                 .padding()
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.orange.opacity(0.1))
+                        .fill(Color.blue.opacity(0.1))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
                 )
             }
             .buttonStyle(PlainButtonStyle())
             .padding(.horizontal)
+            
+            // Show selected video info
+            if let selectedURL = selectedVideoURL {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Video Selected")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                    }
+                    
+                    Text(selectedURL.lastPathComponent)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .padding(.leading, 20)
+                }
+                .padding(.horizontal)
+            }
         }
         .padding(.vertical)
     }
@@ -710,7 +760,7 @@ struct ContentView: View {
         if !hasWallpaper {
             return "Set an underwater wallpaper in System Settings first"
         } else if !hasVideo {
-            return "Choose a video from the library or upload a custom one"
+            return "Choose a video file to upload"
         } else {
             return "Ready to replace your wallpaper"
         }
@@ -906,7 +956,7 @@ struct CustomVideoCard: View {
                     VStack {
                         Image(systemName: "video.fill")
                             .font(.system(size: 40))
-                            .foregroundColor(.orange)
+                            .foregroundColor(.blue)
                         Text("Custom Video")
                             .font(.headline)
                             .fontWeight(.semibold)
@@ -930,7 +980,7 @@ struct CustomVideoCard: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
-                        .stroke(.orange.opacity(0.5), lineWidth: 2)
+                        .stroke(.blue.opacity(0.5), lineWidth: 2)
                 )
         )
     }
@@ -943,7 +993,7 @@ struct EmptyCustomVideoView: View {
         VStack(spacing: 20) {
             Image(systemName: "video.badge.plus")
                 .font(.system(size: 60))
-                .foregroundColor(.orange.opacity(0.7))
+                .foregroundColor(.blue.opacity(0.7))
             
             Text("No Custom Video Selected")
                 .font(.title2)
@@ -959,7 +1009,7 @@ struct EmptyCustomVideoView: View {
                 .foregroundColor(.white)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 24)
-                .background(.orange)
+                .background(.blue)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .padding(40)
@@ -968,7 +1018,7 @@ struct EmptyCustomVideoView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
-                        .stroke(.orange.opacity(0.3), lineWidth: 2)
+                        .stroke(.blue.opacity(0.3), lineWidth: 2)
                 )
         )
     }
@@ -1087,4 +1137,3 @@ struct WallpaperPreview: View {
     ContentView()
         .preferredColorScheme(.dark)
 }
-
