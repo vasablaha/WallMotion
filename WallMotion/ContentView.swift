@@ -58,7 +58,7 @@ class WallpaperManager: ObservableObject {
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
     
     init() {
-        print("🚀 WallpaperManager: Premium version initialized")
+        print("WallpaperManager: Premium version initialized")
         loadVideoLibrary()
         detectCurrentWallpaper()
     }
@@ -166,7 +166,7 @@ class WallpaperManager: ObservableObject {
             )
         ]
         
-        print("📚 Loaded \(videoLibrary.count) videos in library")
+        print("Loaded \(videoLibrary.count) videos in library")
     }
     
     var filteredVideos: [WallpaperVideo] {
@@ -177,11 +177,11 @@ class WallpaperManager: ObservableObject {
     }
     
     func detectCurrentWallpaper() {
-        print("🔍 Detecting currently set wallpaper...")
-        print("📂 Scanning: \(wallpaperPath)")
+        print("Detecting currently set wallpaper...")
+        print("Scanning: \(wallpaperPath)")
         
         guard FileManager.default.fileExists(atPath: wallpaperPath) else {
-            print("❌ Wallpaper folder not found: \(wallpaperPath)")
+            print("Wallpaper folder not found: \(wallpaperPath)")
             detectedWallpaper = "No wallpaper detected - please set one first"
             availableWallpapers = []
             return
@@ -191,10 +191,10 @@ class WallpaperManager: ObservableObject {
             let files = try FileManager.default.contentsOfDirectory(atPath: wallpaperPath)
             let movFiles = files.filter { $0.hasSuffix(".mov") && !$0.contains(".backup") }
             
-            print("📄 Found \(movFiles.count) .mov files in folder")
+            print("Found \(movFiles.count) .mov files in folder")
             
             if movFiles.isEmpty {
-                print("⚠️ No .mov files found")
+                print("No .mov files found")
                 detectedWallpaper = "No wallpapers downloaded - set one first"
                 availableWallpapers = []
                 return
@@ -219,14 +219,14 @@ class WallpaperManager: ObservableObject {
                 let wallpaperName = newestFile.replacingOccurrences(of: ".mov", with: "")
                 detectedWallpaper = wallpaperName
                 availableWallpapers = [wallpaperName]
-                print("✅ Detected current wallpaper: \(wallpaperName)")
+                print("Detected current wallpaper: \(wallpaperName)")
             } else {
                 detectedWallpaper = "Detection failed"
                 availableWallpapers = []
             }
             
         } catch {
-            print("❌ Error scanning wallpaper folder: \(error.localizedDescription)")
+            print("Error scanning wallpaper folder: \(error.localizedDescription)")
             detectedWallpaper = "Error: \(error.localizedDescription)"
             availableWallpapers = []
         }
@@ -237,8 +237,8 @@ class WallpaperManager: ObservableObject {
         progressCallback: @escaping (Double, String) -> Void
     ) async {
         
-        print("🎬 Starting smart wallpaper replacement...")
-        print("📹 Source video: \(videoURL.path)")
+        print("Starting smart wallpaper replacement...")
+        print("Source video: \(videoURL.path)")
         
         progressCallback(0.1, "Detecting current wallpaper...")
         
@@ -247,7 +247,7 @@ class WallpaperManager: ObservableObject {
         }
         
         guard !detectedWallpaper.isEmpty && !detectedWallpaper.contains("No wallpaper") && !detectedWallpaper.contains("Error") else {
-            progressCallback(0.0, "❌ No wallpaper detected. Set an underwater wallpaper first!")
+            progressCallback(0.0, "No wallpaper detected. Please set a video wallpaper in System Settings first!")
             return
         }
         
@@ -262,10 +262,10 @@ class WallpaperManager: ObservableObject {
         
         do {
             try FileManager.default.copyItem(atPath: videoURL.path, toPath: tempVideoPath)
-            print("✅ Video copied to temp location")
+            print("Video copied to temp location")
         } catch {
-            print("❌ Failed to copy to temp: \(error)")
-            progressCallback(0.0, "❌ Failed to prepare video")
+            print("Failed to copy to temp: \(error)")
+            progressCallback(0.0, "Failed to prepare video")
             return
         }
         
@@ -273,17 +273,17 @@ class WallpaperManager: ObservableObject {
         
         guard await executeAllCommands(tempVideoPath: tempVideoPath, targetPath: targetPath, backupPath: backupPath, progressCallback: progressCallback) else {
             try? FileManager.default.removeItem(atPath: tempVideoPath)
-            progressCallback(0.0, "❌ Installation failed")
+            progressCallback(0.0, "Installation failed")
             return
         }
         
         try? FileManager.default.removeItem(atPath: tempVideoPath)
-        progressCallback(1.0, "✅ Wallpaper replaced! Check System Settings!")
-        print("🎉 Replacement completed successfully!")
+        progressCallback(1.0, "Wallpaper replaced! Check System Settings!")
+        print("Replacement completed successfully!")
     }
     
     private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
-        print("🔐 Requesting admin privileges for complete cleanup operation...")
+        print("Requesting admin privileges for complete cleanup operation...")
         
         await MainActor.run {
             progressCallback(0.5, "Cleaning and installing wallpaper...")
@@ -306,10 +306,10 @@ class WallpaperManager: ObservableObject {
                 let result = appleScript?.executeAndReturnError(&error)
                 
                 if let error = error {
-                    print("❌ Batch operation failed: \(error)")
+                    print("Batch operation failed: \(error)")
                     continuation.resume(returning: false)
                 } else {
-                    print("✅ Complete cleanup successful! All old files removed.")
+                    print("Complete cleanup successful! All old files removed.")
                     continuation.resume(returning: true)
                 }
             }
@@ -659,10 +659,10 @@ struct ContentView: View {
             if !isProcessing && !statusMessage.isEmpty && statusMessage != "Choose a video to get started" {
                 VStack(spacing: 8) {
                     HStack {
-                        Image(systemName: statusMessage.contains("✅") ? "checkmark.circle.fill" :
-                                           statusMessage.contains("❌") ? "xmark.circle.fill" : "info.circle.fill")
-                            .foregroundColor(statusMessage.contains("✅") ? .green :
-                                           statusMessage.contains("❌") ? .red : .blue)
+                        Image(systemName: statusMessage.contains("Wallpaper replaced") ? "checkmark.circle.fill" :
+                                           statusMessage.contains("Failed") ? "xmark.circle.fill" : "info.circle.fill")
+                            .foregroundColor(statusMessage.contains("Wallpaper replaced") ? .green :
+                                           statusMessage.contains("Failed") ? .red : .blue)
                         
                         Text(statusMessage)
                             .font(.subheadline)
@@ -758,7 +758,7 @@ struct ContentView: View {
                           !wallpaperManager.detectedWallpaper.contains("Error")
         
         if !hasWallpaper {
-            return "Set an underwater wallpaper in System Settings first"
+            return "Set a video wallpaper in System Settings first"
         } else if !hasVideo {
             return "Choose a video file to upload"
         } else {
@@ -781,12 +781,12 @@ struct ContentView: View {
                 selectedVideoURL = url
                 selectedLibraryVideo = nil
                 wallpaperManager.selectedCategory = .custom
-                print("✅ Custom video selected: \(url.path)")
+                print("Custom video selected: \(url.path)")
                 statusMessage = "Custom video ready: \(url.lastPathComponent)"
             }
         case .failure(let error):
-            print("❌ Video selection error: \(error)")
-            statusMessage = "❌ Failed to select video"
+            print("Video selection error: \(error)")
+            statusMessage = "Failed to select video"
         }
     }
     
@@ -799,7 +799,7 @@ struct ContentView: View {
             if let bundleURL = Bundle.main.url(forResource: selectedLibrary.fileName.replacingOccurrences(of: ".mov", with: ""), withExtension: "mov") {
                 videoURL = bundleURL
             } else {
-                statusMessage = "❌ Library video not found"
+                statusMessage = "Library video not found"
                 return
             }
         } else if let customURL = selectedVideoURL {
@@ -807,13 +807,13 @@ struct ContentView: View {
         }
         
         guard let finalURL = videoURL else {
-            statusMessage = "❌ No video selected"
+            statusMessage = "No video selected"
             return
         }
         
-        print("🚀 Starting premium wallpaper replacement...")
-        print("🎯 Detected wallpaper: \(wallpaperManager.detectedWallpaper)")
-        print("📹 Video source: \(finalURL.path)")
+        print("Starting premium wallpaper replacement...")
+        print("Detected wallpaper: \(wallpaperManager.detectedWallpaper)")
+        print("Video source: \(finalURL.path)")
         
         isProcessing = true
         progress = 0.0
@@ -1047,7 +1047,7 @@ struct DetectionCard: View {
                             .fontWeight(.semibold)
                     }
                     
-                    Text("Set an underwater wallpaper in System Settings first")
+                    Text("Set a video wallpaper in System Settings first")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
