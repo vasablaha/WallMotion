@@ -1,0 +1,583 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		3516365F2E23F6FE00C8C331 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 351636482E23F6FC00C8C331 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3516364F2E23F6FC00C8C331;
+			remoteInfo = WallMotion;
+		};
+		351636692E23F6FE00C8C331 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 351636482E23F6FC00C8C331 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3516364F2E23F6FC00C8C331;
+			remoteInfo = WallMotion;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		351636502E23F6FC00C8C331 /* WallMotion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WallMotion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3516367E2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "WallMotion" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				Models/WallpaperManager.swift,
+			);
+			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		3516367F2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "Copy Bundle Resources" phase from "WallMotion" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 3516364E2E23F6FC00C8C331 /* Resources */;
+			membershipExceptions = (
+				Models/WallpaperManager.swift,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		351636522E23F6FC00C8C331 /* WallMotion */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3516367E2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "WallMotion" target */,
+				3516367F2E23F73F00C8C331 /* Exceptions for "WallMotion" folder in "Copy Bundle Resources" phase from "WallMotion" target */,
+			);
+			path = WallMotion;
+			sourceTree = "<group>";
+		};
+		351636612E23F6FE00C8C331 /* WallMotionTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WallMotionTests;
+			sourceTree = "<group>";
+		};
+		3516366B2E23F6FE00C8C331 /* WallMotionUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WallMotionUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3516364D2E23F6FC00C8C331 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3516365B2E23F6FE00C8C331 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		351636652E23F6FE00C8C331 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		351636472E23F6FC00C8C331 = {
+			isa = PBXGroup;
+			children = (
+				351636522E23F6FC00C8C331 /* WallMotion */,
+				351636612E23F6FE00C8C331 /* WallMotionTests */,
+				3516366B2E23F6FE00C8C331 /* WallMotionUITests */,
+				351636512E23F6FC00C8C331 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		351636512E23F6FC00C8C331 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				351636502E23F6FC00C8C331 /* WallMotion.app */,
+				3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */,
+				351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3516364F2E23F6FC00C8C331 /* WallMotion */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 351636722E23F6FE00C8C331 /* Build configuration list for PBXNativeTarget "WallMotion" */;
+			buildPhases = (
+				3516364C2E23F6FC00C8C331 /* Sources */,
+				3516364D2E23F6FC00C8C331 /* Frameworks */,
+				3516364E2E23F6FC00C8C331 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				351636522E23F6FC00C8C331 /* WallMotion */,
+			);
+			name = WallMotion;
+			packageProductDependencies = (
+			);
+			productName = WallMotion;
+			productReference = 351636502E23F6FC00C8C331 /* WallMotion.app */;
+			productType = "com.apple.product-type.application";
+		};
+		3516365D2E23F6FE00C8C331 /* WallMotionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 351636752E23F6FE00C8C331 /* Build configuration list for PBXNativeTarget "WallMotionTests" */;
+			buildPhases = (
+				3516365A2E23F6FE00C8C331 /* Sources */,
+				3516365B2E23F6FE00C8C331 /* Frameworks */,
+				3516365C2E23F6FE00C8C331 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				351636602E23F6FE00C8C331 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				351636612E23F6FE00C8C331 /* WallMotionTests */,
+			);
+			name = WallMotionTests;
+			packageProductDependencies = (
+			);
+			productName = WallMotionTests;
+			productReference = 3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		351636672E23F6FE00C8C331 /* WallMotionUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 351636782E23F6FE00C8C331 /* Build configuration list for PBXNativeTarget "WallMotionUITests" */;
+			buildPhases = (
+				351636642E23F6FE00C8C331 /* Sources */,
+				351636652E23F6FE00C8C331 /* Frameworks */,
+				351636662E23F6FE00C8C331 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3516366A2E23F6FE00C8C331 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				3516366B2E23F6FE00C8C331 /* WallMotionUITests */,
+			);
+			name = WallMotionUITests;
+			packageProductDependencies = (
+			);
+			productName = WallMotionUITests;
+			productReference = 351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		351636482E23F6FC00C8C331 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1630;
+				LastUpgradeCheck = 1630;
+				TargetAttributes = {
+					3516364F2E23F6FC00C8C331 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					3516365D2E23F6FE00C8C331 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 3516364F2E23F6FC00C8C331;
+					};
+					351636672E23F6FE00C8C331 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 3516364F2E23F6FC00C8C331;
+					};
+				};
+			};
+			buildConfigurationList = 3516364B2E23F6FC00C8C331 /* Build configuration list for PBXProject "WallMotion" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 351636472E23F6FC00C8C331;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 351636512E23F6FC00C8C331 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3516364F2E23F6FC00C8C331 /* WallMotion */,
+				3516365D2E23F6FE00C8C331 /* WallMotionTests */,
+				351636672E23F6FE00C8C331 /* WallMotionUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3516364E2E23F6FC00C8C331 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3516365C2E23F6FE00C8C331 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		351636662E23F6FE00C8C331 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3516364C2E23F6FC00C8C331 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3516365A2E23F6FE00C8C331 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		351636642E23F6FE00C8C331 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		351636602E23F6FE00C8C331 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
+			targetProxy = 3516365F2E23F6FE00C8C331 /* PBXContainerItemProxy */;
+		};
+		3516366A2E23F6FE00C8C331 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
+			targetProxy = 351636692E23F6FE00C8C331 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		351636702E23F6FE00C8C331 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		351636712E23F6FE00C8C331 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		351636732E23F6FE00C8C331 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WallMotion/WallMotion.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WallMotion/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.WallMotion";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		351636742E23F6FE00C8C331 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WallMotion/WallMotion.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WallMotion/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.WallMotion";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		351636762E23F6FE00C8C331 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.WallMotionTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WallMotion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WallMotion";
+			};
+			name = Debug;
+		};
+		351636772E23F6FE00C8C331 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.WallMotionTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WallMotion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WallMotion";
+			};
+			name = Release;
+		};
+		351636792E23F6FE00C8C331 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.WallMotionUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = WallMotion;
+			};
+			name = Debug;
+		};
+		3516367A2E23F6FE00C8C331 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GJMB6NKTWK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.WallMotionUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = WallMotion;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3516364B2E23F6FC00C8C331 /* Build configuration list for PBXProject "WallMotion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				351636702E23F6FE00C8C331 /* Debug */,
+				351636712E23F6FE00C8C331 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		351636722E23F6FE00C8C331 /* Build configuration list for PBXNativeTarget "WallMotion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				351636732E23F6FE00C8C331 /* Debug */,
+				351636742E23F6FE00C8C331 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		351636752E23F6FE00C8C331 /* Build configuration list for PBXNativeTarget "WallMotionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				351636762E23F6FE00C8C331 /* Debug */,
+				351636772E23F6FE00C8C331 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		351636782E23F6FE00C8C331 /* Build configuration list for PBXNativeTarget "WallMotionUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				351636792E23F6FE00C8C331 /* Debug */,
+				3516367A2E23F6FE00C8C331 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 351636482E23F6FC00C8C331 /* Project object */;
+}
