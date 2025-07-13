@@ -3,16 +3,177 @@ import AVKit
 import Foundation
 import Combine
 
-// MARK: - Smart WallpaperManager (inside ContentView.swift)
+// MARK: - Video Library Models
+struct WallpaperVideo: Identifiable, Hashable {
+    let id = UUID()
+    let name: String
+    let category: VideoCategory
+    let duration: String
+    let resolution: String
+    let thumbnailName: String
+    let fileName: String
+    let description: String
+    
+    var isCustom: Bool { fileName.isEmpty }
+}
+
+enum VideoCategory: String, CaseIterable {
+    case nature = "Nature"
+    case abstract = "Abstract"
+    case ocean = "Ocean"
+    case space = "Space"
+    case minimal = "Minimal"
+    case custom = "Custom"
+    
+    var icon: String {
+        switch self {
+        case .nature: return "leaf.fill"
+        case .abstract: return "circle.hexagongrid.fill"
+        case .ocean: return "water.waves"
+        case .space: return "moon.stars.fill"
+        case .minimal: return "circle.fill"
+        case .custom: return "folder.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .nature: return .green
+        case .abstract: return .purple
+        case .ocean: return .blue
+        case .space: return .indigo
+        case .minimal: return .gray
+        case .custom: return .orange
+        }
+    }
+}
+
+// MARK: - Smart WallpaperManager with Video Library
 class WallpaperManager: ObservableObject {
     @Published var availableWallpapers: [String] = []
     @Published var detectedWallpaper: String = ""
+    @Published var videoLibrary: [WallpaperVideo] = []
+    @Published var selectedCategory: VideoCategory = .nature
     
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
     
     init() {
-        print("🚀 WallpaperManager: Smart detection initialized")
+        print("🚀 WallpaperManager: Premium version initialized")
+        loadVideoLibrary()
         detectCurrentWallpaper()
+    }
+    
+    func loadVideoLibrary() {
+        videoLibrary = [
+            // Nature Category
+            WallpaperVideo(
+                name: "Forest Rain",
+                category: .nature,
+                duration: "2:30",
+                resolution: "4K",
+                thumbnailName: "forest_rain_thumb",
+                fileName: "forest_rain.mov",
+                description: "Gentle rain falling through green forest canopy"
+            ),
+            WallpaperVideo(
+                name: "Mountain Mist",
+                category: .nature,
+                duration: "1:45",
+                resolution: "4K",
+                thumbnailName: "mountain_mist_thumb",
+                fileName: "mountain_mist.mov",
+                description: "Misty clouds rolling over mountain peaks"
+            ),
+            WallpaperVideo(
+                name: "Autumn Leaves",
+                category: .nature,
+                duration: "3:00",
+                resolution: "4K",
+                thumbnailName: "autumn_leaves_thumb",
+                fileName: "autumn_leaves.mov",
+                description: "Golden leaves gently falling in autumn breeze"
+            ),
+            
+            // Ocean Category
+            WallpaperVideo(
+                name: "Deep Blue",
+                category: .ocean,
+                duration: "2:15",
+                resolution: "4K",
+                thumbnailName: "deep_blue_thumb",
+                fileName: "deep_blue.mov",
+                description: "Mesmerizing deep ocean waves"
+            ),
+            WallpaperVideo(
+                name: "Coral Garden",
+                category: .ocean,
+                duration: "4:00",
+                resolution: "4K",
+                thumbnailName: "coral_garden_thumb",
+                fileName: "coral_garden.mov",
+                description: "Vibrant coral reef with tropical fish"
+            ),
+            
+            // Abstract Category
+            WallpaperVideo(
+                name: "Fluid Motion",
+                category: .abstract,
+                duration: "1:30",
+                resolution: "4K",
+                thumbnailName: "fluid_motion_thumb",
+                fileName: "fluid_motion.mov",
+                description: "Smooth flowing abstract patterns"
+            ),
+            WallpaperVideo(
+                name: "Neon Dreams",
+                category: .abstract,
+                duration: "2:45",
+                resolution: "4K",
+                thumbnailName: "neon_dreams_thumb",
+                fileName: "neon_dreams.mov",
+                description: "Colorful neon lights and geometric shapes"
+            ),
+            
+            // Space Category
+            WallpaperVideo(
+                name: "Galaxy Spiral",
+                category: .space,
+                duration: "3:30",
+                resolution: "4K",
+                thumbnailName: "galaxy_spiral_thumb",
+                fileName: "galaxy_spiral.mov",
+                description: "Stunning spiral galaxy rotation"
+            ),
+            WallpaperVideo(
+                name: "Nebula",
+                category: .space,
+                duration: "2:00",
+                resolution: "4K",
+                thumbnailName: "nebula_thumb",
+                fileName: "nebula.mov",
+                description: "Colorful cosmic nebula clouds"
+            ),
+            
+            // Minimal Category
+            WallpaperVideo(
+                name: "Clean Waves",
+                category: .minimal,
+                duration: "1:20",
+                resolution: "4K",
+                thumbnailName: "clean_waves_thumb",
+                fileName: "clean_waves.mov",
+                description: "Simple, elegant wave animation"
+            )
+        ]
+        
+        print("📚 Loaded \(videoLibrary.count) videos in library")
+    }
+    
+    var filteredVideos: [WallpaperVideo] {
+        if selectedCategory == .custom {
+            return []
+        }
+        return videoLibrary.filter { $0.category == selectedCategory }
     }
     
     func detectCurrentWallpaper() {
@@ -21,7 +182,6 @@ class WallpaperManager: ObservableObject {
         
         guard FileManager.default.fileExists(atPath: wallpaperPath) else {
             print("❌ Wallpaper folder not found: \(wallpaperPath)")
-            print("💡 Please set an underwater wallpaper first!")
             detectedWallpaper = "No wallpaper detected - please set one first"
             availableWallpapers = []
             return
@@ -35,13 +195,11 @@ class WallpaperManager: ObservableObject {
             
             if movFiles.isEmpty {
                 print("⚠️ No .mov files found")
-                print("💡 Set an underwater wallpaper in System Settings first!")
                 detectedWallpaper = "No wallpapers downloaded - set one first"
                 availableWallpapers = []
                 return
             }
             
-            // Find newest file by modification date
             var newestFile: String = ""
             var newestDate: Date = Date.distantPast
             
@@ -50,8 +208,6 @@ class WallpaperManager: ObservableObject {
                 let attributes = try FileManager.default.attributesOfItem(atPath: filePath)
                 
                 if let modDate = attributes[.modificationDate] as? Date {
-                    print("📅 \(file): \(modDate)")
-                    
                     if modDate > newestDate {
                         newestDate = modDate
                         newestFile = file
@@ -63,12 +219,8 @@ class WallpaperManager: ObservableObject {
                 let wallpaperName = newestFile.replacingOccurrences(of: ".mov", with: "")
                 detectedWallpaper = wallpaperName
                 availableWallpapers = [wallpaperName]
-                
                 print("✅ Detected current wallpaper: \(wallpaperName)")
-                print("📅 Last modified: \(newestDate)")
-                print("📁 File: \(newestFile)")
             } else {
-                print("❌ Could not determine newest file")
                 detectedWallpaper = "Detection failed"
                 availableWallpapers = []
             }
@@ -90,7 +242,6 @@ class WallpaperManager: ObservableObject {
         
         progressCallback(0.1, "Detecting current wallpaper...")
         
-        // Re-detect to get the most current wallpaper
         await MainActor.run {
             detectCurrentWallpaper()
         }
@@ -103,20 +254,13 @@ class WallpaperManager: ObservableObject {
         let targetFileName = "\(detectedWallpaper).mov"
         let targetPath = "\(wallpaperPath)/\(targetFileName)"
         
-        print("🎯 Target file: \(targetFileName)")
-        print("📍 Full path: \(targetPath)")
-        
         progressCallback(0.2, "Preparing video...")
         
-        // First copy to temp location (app has access to temp)
         let tempDir = FileManager.default.temporaryDirectory
         let tempVideoPath = tempDir.appendingPathComponent("wallpaper_temp.mov").path
         let backupPath = "\(targetPath).backup.\(Int(Date().timeIntervalSince1970))"
         
-        print("📁 Copying to temp location: \(tempVideoPath)")
-        
         do {
-            // Copy to temp using FileManager (no sudo needed)
             try FileManager.default.copyItem(atPath: videoURL.path, toPath: tempVideoPath)
             print("✅ Video copied to temp location")
         } catch {
@@ -127,96 +271,30 @@ class WallpaperManager: ObservableObject {
         
         progressCallback(0.4, "Requesting admin access (ONE TIME ONLY)...")
         
-        // Execute ALL commands in one admin request!
         guard await executeAllCommands(tempVideoPath: tempVideoPath, targetPath: targetPath, backupPath: backupPath, progressCallback: progressCallback) else {
-            // Cleanup temp file
             try? FileManager.default.removeItem(atPath: tempVideoPath)
             progressCallback(0.0, "❌ Installation failed")
             return
         }
         
-        // Cleanup temp file
         try? FileManager.default.removeItem(atPath: tempVideoPath)
-        print("🧹 Cleaned up temp file")
-        
         progressCallback(1.0, "✅ Wallpaper replaced! Check System Settings!")
         print("🎉 Replacement completed successfully!")
     }
     
-    private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String) async -> Bool {
-        print("🔐 Requesting admin privileges for batch operation...")
-        
-        let batchScript = """
-        do shell script "
-        echo '🔄 Starting batch wallpaper replacement...'
-        
-        # Step 1: Backup original
-        echo '💾 Backing up original...'
-        cp '\(targetPath)' '\(backupPath)'
-        
-        # Step 2: Remove original
-        echo '🗑️ Removing original...'
-        rm '\(targetPath)'
-        
-        # Step 3: Install new video
-        echo '📦 Installing new video...'
-        cp '\(tempVideoPath)' '\(targetPath)'
-        
-        # Step 4: Refresh system
-        echo '🔄 Refreshing wallpaper system...'
-        killall WallpaperAgent 2>/dev/null || true
-        
-        echo '✅ Batch operation completed!'
-        " with administrator privileges
-        """
-        
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                let appleScript = NSAppleScript(source: batchScript)
-                var error: NSDictionary?
-                let result = appleScript?.executeAndReturnError(&error)
-                
-                if let error = error {
-                    print("❌ Batch operation failed: \(error)")
-                    continuation.resume(returning: false)
-                } else {
-                    print("✅ Batch operation succeeded!")
-                    continuation.resume(returning: true)
-                }
-            }
-        }
-    }
-    
-    // Single batch operation - no more multiple admin requests!
     private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
         print("🔐 Requesting admin privileges for batch operation...")
         
-        // Show intermediate progress during batch operation
         await MainActor.run {
             progressCallback(0.5, "Backing up original...")
         }
         
         let batchScript = """
         do shell script "
-        echo '🔄 Starting batch wallpaper replacement...'
-        
-        # Step 1: Backup original
-        echo '💾 Backing up original...'
         cp '\(targetPath)' '\(backupPath)'
-        
-        # Step 2: Remove original
-        echo '🗑️ Removing original...'
         rm '\(targetPath)'
-        
-        # Step 3: Install new video
-        echo '📦 Installing new video...'
         cp '\(tempVideoPath)' '\(targetPath)'
-        
-        # Step 4: Refresh system
-        echo '🔄 Refreshing wallpaper system...'
         killall WallpaperAgent 2>/dev/null || true
-        
-        echo '✅ Batch operation completed!'
         " with administrator privileges
         """
         
@@ -246,40 +324,26 @@ class WallpaperManager: ObservableObject {
     }
 }
 
-// MARK: - Main ContentView
+// MARK: - Premium ContentView
 struct ContentView: View {
     @StateObject private var wallpaperManager = WallpaperManager()
     @State private var selectedVideoURL: URL?
+    @State private var selectedLibraryVideo: WallpaperVideo?
     @State private var isProcessing = false
     @State private var progress: Double = 0.0
-    @State private var statusMessage = "Ready to replace wallpaper"
+    @State private var statusMessage = "Choose a video to get started"
     @State private var showingFilePicker = false
+    @State private var showingSuccess = false
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        VStack(spacing: 30) {
-            headerView
-            
-            Divider()
-            
-            detectionSection
-            
-            Divider()
-            
-            videoSelectionSection
-            
-            Divider()
-            
-            progressSection
-            
-            actionButtonSection
-            
-            Spacer()
-            
-            debugSection
+        NavigationView {
+            sidebarView
+            mainContentView
         }
-        .padding(40)
-        .frame(width: 800, height: 700)
-        .background(Color(.windowBackgroundColor))
+        .navigationViewStyle(DoubleColumnNavigationViewStyle())
+        .frame(minWidth: 1200, minHeight: 800)
+        .background(backgroundGradient)
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.movie, .quickTimeMovie, .mpeg4Movie],
@@ -287,184 +351,377 @@ struct ContentView: View {
         ) { result in
             handleVideoSelection(result)
         }
+        .alert("Success!", isPresented: $showingSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Wallpaper replaced successfully! Check System Settings to see your new wallpaper.")
+        }
     }
     
-    private var headerView: some View {
+    private var backgroundGradient: some View {
+        LinearGradient(
+            colors: colorScheme == .dark ?
+                [Color.black.opacity(0.8), Color.blue.opacity(0.1)] :
+                [Color.white, Color.blue.opacity(0.05)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+    
+    private var sidebarView: some View {
+        VStack(spacing: 0) {
+            headerSection
+            
+            Divider()
+                .padding(.horizontal)
+            
+            categorySection
+            
+            Divider()
+                .padding(.horizontal)
+            
+            detectionSection
+            
+            Spacer()
+        }
+        .frame(minWidth: 300, maxWidth: 350)
+        .background(sidebarBackground)
+    }
+    
+    private var sidebarBackground: some View {
+        RoundedRectangle(cornerRadius: 0)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 0)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            )
+    }
+    
+    private var headerSection: some View {
         VStack(spacing: 15) {
             Image(systemName: "desktopcomputer")
-                .font(.system(size: 70))
-                .foregroundColor(.blue)
+                .font(.system(size: 50, weight: .ultraLight))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             
             Text("WallMotion")
                 .font(.largeTitle)
                 .fontWeight(.bold)
+                .fontDesign(.rounded)
             
-            Text("Smart wallpaper replacement - automatically detects your current wallpaper")
-                .font(.headline)
+            Text("Premium Live Wallpapers")
+                .font(.subheadline)
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
         }
+        .padding(.vertical, 30)
+    }
+    
+    private var categorySection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Categories")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .padding(.horizontal)
+            
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 12) {
+                ForEach(VideoCategory.allCases.filter { $0 != .custom }, id: \.self) { category in
+                    CategoryButton(
+                        category: category,
+                        isSelected: wallpaperManager.selectedCategory == category
+                    ) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            wallpaperManager.selectedCategory = category
+                            selectedLibraryVideo = nil
+                            selectedVideoURL = nil
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+            
+            // Custom Video Button
+            Button(action: { showingFilePicker = true }) {
+                HStack {
+                    Image(systemName: "folder.badge.plus")
+                        .foregroundColor(.orange)
+                    Text("Custom Video")
+                        .fontWeight(.medium)
+                    Spacer()
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.orange.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .padding(.horizontal)
+        }
+        .padding(.vertical)
     }
     
     private var detectionSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
-                Text("Current Wallpaper Detection")
-                    .font(.title2)
+                Text("Current Wallpaper")
+                    .font(.headline)
                     .fontWeight(.semibold)
                 
                 Spacer()
                 
-                Button("Refresh Detection") {
-                    print("🔄 Manual refresh requested")
-                    wallpaperManager.detectCurrentWallpaper()
-                }
-                .buttonStyle(.bordered)
-            }
-            
-            GroupBox {
-                VStack(alignment: .leading, spacing: 10) {
-                    if wallpaperManager.detectedWallpaper.isEmpty {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Detecting wallpaper...")
-                                .foregroundColor(.secondary)
-                        }
-                    } else if wallpaperManager.detectedWallpaper.contains("No wallpaper") || wallpaperManager.detectedWallpaper.contains("Error") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .foregroundColor(.orange)
-                                Text(wallpaperManager.detectedWallpaper)
-                                    .foregroundColor(.orange)
-                                    .fontWeight(.semibold)
-                            }
-                            
-                            Divider()
-                            
-                            Text("How to fix:")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("1. Open System Settings → Wallpaper")
-                                Text("2. Choose 'Underwater' category")
-                                Text("3. Select any underwater wallpaper (e.g., Alaskan Jellyfish)")
-                                Text("4. Wait for download to complete")
-                                Text("5. Click 'Refresh Detection' button above")
-                            }
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("Detected: \(wallpaperManager.detectedWallpaper)")
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.green)
-                            }
-                            
-                            Text("✅ Ready for replacement!")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                Button(action: {
+                    withAnimation {
+                        wallpaperManager.detectCurrentWallpaper()
                     }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 5)
+                .buttonStyle(PlainButtonStyle())
             }
+            .padding(.horizontal)
+            
+            DetectionCard(detectedWallpaper: wallpaperManager.detectedWallpaper)
+                .padding(.horizontal)
         }
+        .padding(.vertical)
     }
     
-    private var videoSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Select Your Video")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            HStack {
-                Button(action: { showingFilePicker = true }) {
-                    HStack {
-                        Image(systemName: "video.badge.plus")
-                        Text("Choose Video File")
-                    }
-                    .padding(.horizontal)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
-                if let url = selectedVideoURL {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("✅ \(url.lastPathComponent)")
-                            .foregroundColor(.green)
-                            .fontWeight(.semibold)
-                        Text(url.path)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                } else {
-                    Text("No video selected")
-                        .foregroundColor(.secondary)
-                        .italic()
-                }
+    private var mainContentView: some View {
+        VStack(spacing: 0) {
+            if wallpaperManager.selectedCategory == .custom {
+                customVideoView
+            } else {
+                videoLibraryView
             }
+            
+            Divider()
+            
+            actionSection
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.clear)
     }
     
-    private var progressSection: some View {
-        VStack(spacing: 15) {
+    private var videoLibraryView: some View {
+        ScrollView {
+            LazyVGrid(columns: [
+                GridItem(.adaptive(minimum: 280, maximum: 320), spacing: 20)
+            ], spacing: 20) {
+                ForEach(wallpaperManager.filteredVideos) { video in
+                    VideoCard(
+                        video: video,
+                        isSelected: selectedLibraryVideo?.id == video.id
+                    ) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            selectedLibraryVideo = video
+                            selectedVideoURL = nil
+                            statusMessage = "Selected: \(video.name)"
+                        }
+                    }
+                }
+            }
+            .padding(30)
+        }
+        .background(Color.clear)
+    }
+    
+    private var customVideoView: some View {
+        VStack {
+            Spacer()
+            
+            if let url = selectedVideoURL {
+                CustomVideoCard(videoURL: url)
+            } else {
+                EmptyCustomVideoView {
+                    showingFilePicker = true
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(30)
+    }
+    
+    private var actionSection: some View {
+        VStack(spacing: 0) {
+            // Progress section (only show when processing)
             if isProcessing {
-                ProgressView(value: progress) {
-                    Text("Processing...")
+                VStack(spacing: 16) {
+                    HStack {
+                        Image(systemName: "gear")
+                            .rotationEffect(.degrees(360))
+                            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isProcessing)
+                        
+                        Text("Processing wallpaper replacement...")
+                            .font(.headline)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                    }
+                    
+                    VStack(spacing: 8) {
+                        ProgressView(value: progress)
+                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            .scaleEffect(y: 1.5)
+                        
+                        HStack {
+                            Text(statusMessage)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            Text("\(Int(progress * 100))%")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                        }
+                    }
                 }
-                .progressViewStyle(LinearProgressViewStyle())
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(.blue.opacity(0.3), lineWidth: 1)
+                        )
+                )
+                .padding(.horizontal, 30)
+                .padding(.top, 20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             
-            Text(statusMessage)
-                .font(.headline)
-                .foregroundColor(isProcessing ? .orange : (statusMessage.contains("✅") ? .green : .primary))
-                .multilineTextAlignment(.center)
-        }
-    }
-    
-    private var actionButtonSection: some View {
-        Button(action: replaceWallpaper) {
-            HStack {
-                Image(systemName: isProcessing ? "gear" : "arrow.triangle.2.circlepath")
-                    .rotationEffect(.degrees(isProcessing ? 360 : 0))
-                    .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isProcessing)
+            // Status message (only when not processing)
+            if !isProcessing && !statusMessage.isEmpty && statusMessage != "Choose a video to get started" {
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: statusMessage.contains("✅") ? "checkmark.circle.fill" :
+                                           statusMessage.contains("❌") ? "xmark.circle.fill" : "info.circle.fill")
+                            .foregroundColor(statusMessage.contains("✅") ? .green :
+                                           statusMessage.contains("❌") ? .red : .blue)
+                        
+                        Text(statusMessage)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal, 30)
+                .padding(.top, 20)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            
+            // Action button section
+            VStack(spacing: 16) {
+                // Ready indicator
+                if isReadyToReplace && !isProcessing {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Ready to replace wallpaper")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 30)
+                    .transition(.opacity)
+                }
                 
-                Text(isProcessing ? "Processing..." : "Replace Wallpaper")
-                    .font(.headline)
+                // Main action button
+                Button(action: replaceWallpaper) {
+                    HStack(spacing: 12) {
+                        if isProcessing {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        Text(isProcessing ? "Processing..." : "Replace Wallpaper")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: isReadyToReplace && !isProcessing ?
+                                        [.blue, .purple] : [.gray.opacity(0.4), .gray.opacity(0.6)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .shadow(
+                                color: isReadyToReplace && !isProcessing ? .blue.opacity(0.4) : .clear,
+                                radius: 12, x: 0, y: 6
+                            )
+                    )
+                    .scaleEffect(isReadyToReplace && !isProcessing ? 1.0 : 0.96)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isReadyToReplace)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(!isReadyToReplace || isProcessing)
+                .padding(.horizontal, 30)
+                
+                // Instruction text
+                if !isReadyToReplace && !isProcessing {
+                    Text(getInstructionText())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                        .transition(.opacity)
+                }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 24)
+            .padding(.vertical, 30)
+            .background(.ultraThinMaterial)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .disabled(selectedVideoURL == nil ||
-                 wallpaperManager.detectedWallpaper.isEmpty ||
-                 wallpaperManager.detectedWallpaper.contains("No wallpaper") ||
-                 wallpaperManager.detectedWallpaper.contains("Error") ||
-                 isProcessing)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: isProcessing)
     }
     
-    private var debugSection: some View {
-        GroupBox("Debug Info") {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Video: \(selectedVideoURL?.lastPathComponent ?? "None")")
-                Text("Detected: \(wallpaperManager.detectedWallpaper.isEmpty ? "None" : wallpaperManager.detectedWallpaper)")
-                Text("Wallpaper Path: /Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS")
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private func getInstructionText() -> String {
+        let hasVideo = selectedVideoURL != nil || selectedLibraryVideo != nil
+        let hasWallpaper = !wallpaperManager.detectedWallpaper.isEmpty &&
+                          !wallpaperManager.detectedWallpaper.contains("No wallpaper") &&
+                          !wallpaperManager.detectedWallpaper.contains("Error")
+        
+        if !hasWallpaper {
+            return "Set an underwater wallpaper in System Settings first"
+        } else if !hasVideo {
+            return "Choose a video from the library or upload a custom one"
+        } else {
+            return "Ready to replace your wallpaper"
         }
+    }
+    
+    private var isReadyToReplace: Bool {
+        let hasVideo = selectedVideoURL != nil || selectedLibraryVideo != nil
+        let hasWallpaper = !wallpaperManager.detectedWallpaper.isEmpty &&
+                          !wallpaperManager.detectedWallpaper.contains("No wallpaper") &&
+                          !wallpaperManager.detectedWallpaper.contains("Error")
+        return hasVideo && hasWallpaper
     }
     
     private func handleVideoSelection(_ result: Result<[URL], Error>) {
@@ -472,8 +729,10 @@ struct ContentView: View {
         case .success(let urls):
             if let url = urls.first {
                 selectedVideoURL = url
-                print("✅ Video selected: \(url.path)")
-                statusMessage = "Video ready: \(url.lastPathComponent)"
+                selectedLibraryVideo = nil
+                wallpaperManager.selectedCategory = .custom
+                print("✅ Custom video selected: \(url.path)")
+                statusMessage = "Custom video ready: \(url.lastPathComponent)"
             }
         case .failure(let error):
             print("❌ Video selection error: \(error)")
@@ -482,23 +741,42 @@ struct ContentView: View {
     }
     
     private func replaceWallpaper() {
-        guard let videoURL = selectedVideoURL else { return }
+        var videoURL: URL?
         
-        print("🚀 Starting smart replacement...")
+        if let selectedLibrary = selectedLibraryVideo {
+            // For library videos, we'd need to get the actual file URL
+            // For now, we'll simulate with a bundle resource path
+            if let bundleURL = Bundle.main.url(forResource: selectedLibrary.fileName.replacingOccurrences(of: ".mov", with: ""), withExtension: "mov") {
+                videoURL = bundleURL
+            } else {
+                statusMessage = "❌ Library video not found"
+                return
+            }
+        } else if let customURL = selectedVideoURL {
+            videoURL = customURL
+        }
+        
+        guard let finalURL = videoURL else {
+            statusMessage = "❌ No video selected"
+            return
+        }
+        
+        print("🚀 Starting premium wallpaper replacement...")
         print("🎯 Detected wallpaper: \(wallpaperManager.detectedWallpaper)")
-        print("📹 Video source: \(videoURL.path)")
+        print("📹 Video source: \(finalURL.path)")
         
         isProcessing = true
         progress = 0.0
         
         Task {
-            await wallpaperManager.replaceWallpaper(videoURL: videoURL) { progressValue, message in
+            await wallpaperManager.replaceWallpaper(videoURL: finalURL) { progressValue, message in
                 DispatchQueue.main.async {
                     self.progress = progressValue
                     self.statusMessage = message
                     
                     if progressValue >= 1.0 {
                         self.isProcessing = false
+                        self.showingSuccess = true
                     }
                 }
             }
@@ -506,6 +784,307 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Supporting Views
+struct CategoryButton: View {
+    let category: VideoCategory
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: category.icon)
+                    .font(.title2)
+                    .foregroundColor(isSelected ? .white : category.color)
+                
+                Text(category.rawValue)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : .primary)
+            }
+            .frame(height: 70)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? category.color : category.color.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(category.color.opacity(isSelected ? 0 : 0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct VideoCard: View {
+    let video: WallpaperVideo
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Thumbnail placeholder
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        LinearGradient(
+                            colors: [video.category.color.opacity(0.3), video.category.color.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(height: 160)
+                    .overlay(
+                        VStack {
+                            Image(systemName: "play.circle.fill")
+                                .font(.largeTitle)
+                                .foregroundColor(.white.opacity(0.8))
+                            Text(video.duration)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(video.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                    
+                    Text(video.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                    
+                    HStack {
+                        Text(video.resolution)
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        
+                        Spacer()
+                        
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(isSelected ? video.category.color : Color.clear, lineWidth: 2)
+                    )
+            )
+            .scaleEffect(isSelected ? 1.02 : 1.0)
+            .shadow(color: isSelected ? video.category.color.opacity(0.3) : .black.opacity(0.1), radius: isSelected ? 10 : 5)
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isSelected)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct CustomVideoCard: View {
+    let videoURL: URL
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .frame(height: 200)
+                .overlay(
+                    VStack {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.orange)
+                        Text("Custom Video")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                    }
+                )
+            
+            VStack(spacing: 8) {
+                Text(videoURL.lastPathComponent)
+                    .font(.headline)
+                    .lineLimit(1)
+                
+                Text(videoURL.path)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(.orange.opacity(0.5), lineWidth: 2)
+                )
+        )
+    }
+}
+
+struct EmptyCustomVideoView: View {
+    let action: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "video.badge.plus")
+                .font(.system(size: 60))
+                .foregroundColor(.orange.opacity(0.7))
+            
+            Text("No Custom Video Selected")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            Text("Choose a video file from your computer to use as wallpaper")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button("Choose Video File", action: action)
+                .font(.headline)
+                .foregroundColor(.white)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 24)
+                .background(.orange)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .padding(40)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(.orange.opacity(0.3), lineWidth: 2)
+                )
+        )
+    }
+}
+
+struct DetectionCard: View {
+    let detectedWallpaper: String
+    private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if detectedWallpaper.isEmpty {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                    Text("Detecting...")
+                        .foregroundColor(.secondary)
+                }
+                .frame(height: 80)
+            } else if detectedWallpaper.contains("No wallpaper") || detectedWallpaper.contains("Error") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("Setup Required")
+                            .fontWeight(.semibold)
+                    }
+                    
+                    Text("Set an underwater wallpaper in System Settings first")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(height: 80)
+            } else {
+                HStack(spacing: 12) {
+                    // Wallpaper preview
+                    WallpaperPreview(wallpaperName: detectedWallpaper, wallpaperPath: wallpaperPath)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Ready")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.green)
+                        }
+                        
+                        Text(detectedWallpaper)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(2)
+                        
+                        Text("Live wallpaper detected")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+}
+
+struct WallpaperPreview: View {
+    let wallpaperName: String
+    let wallpaperPath: String
+    @State private var hasPreview = false
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(
+                LinearGradient(
+                    colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 60, height: 45)
+            .overlay(
+                Group {
+                    if hasPreview {
+                        // If we could load the actual video preview, show it here
+                        // For now, show a nice icon
+                        Image(systemName: "play.rectangle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.8))
+                    } else {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+            )
+            .onAppear {
+                checkForPreview()
+            }
+    }
+    
+    private func checkForPreview() {
+        let filePath = "\(wallpaperPath)/\(wallpaperName).mov"
+        hasPreview = FileManager.default.fileExists(atPath: filePath)
+    }
+}
+
 #Preview {
     ContentView()
+        .preferredColorScheme(.dark)
 }
+
