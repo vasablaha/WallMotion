@@ -1,40 +1,21 @@
-//
-//  WallpaperManager.swift
-//  WallMotion
-//
-//  Created by Václav Blaha on 13.07.2025.
-//
-
 import Foundation
 import Combine
 
 class WallpaperManager: ObservableObject {
     @Published var availableWallpapers: [String] = []
     @Published var detectedWallpaper: String = ""
-    @Published var selectedCategory: VideoCategory = .custom // This line might need adjustment if VideoCategory is solely for the video library.
+    @Published var selectedCategory: VideoCategory = .custom
 
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
 
+    // MARK: - Init
+
     init() {
         print("WallpaperManager: Premium version initialized")
-        // loadVideoLibrary() // Removed as videoLibrary is no longer present
         detectCurrentWallpaper()
     }
 
-    // func loadVideoLibrary() { // Entire function removed
-    //     videoLibrary = [
-    //         // ... (all WallpaperVideo entries removed) ...
-    //     ]
-    //     print("Loaded \(videoLibrary.count) videos across \(VideoCategory.allCases.count) categories")
-    // }
-
-    var filteredVideos: [WallpaperVideo] { // This computed property will need to be removed or significantly altered
-        if selectedCategory == .custom {
-            return []
-        }
-        return [] // No videoLibrary to filter, so always return empty
-        // return videoLibrary.filter { $0.category == selectedCategory } // Original line removed
-    }
+    // MARK: - Detecting
 
     func detectCurrentWallpaper() {
         print("Detecting currently set wallpaper...")
@@ -54,32 +35,28 @@ class WallpaperManager: ObservableObject {
             print("Found \(movFiles.count) .mov files in folder")
 
             if movFiles.isEmpty {
-                print("No .mov files found")
                 detectedWallpaper = "No wallpapers downloaded - set one first"
                 availableWallpapers = []
                 return
             }
 
             var newestFile: String = ""
-            var newestDate: Date = Date.distantPast
+            var newestDate: Date = .distantPast
 
             for file in movFiles {
-                let filePath = "\(wallpaperPath)/\(file)"
-                let attributes = try FileManager.default.attributesOfItem(atPath: filePath)
-
-                if let modDate = attributes[.modificationDate] as? Date {
-                    if modDate > newestDate {
-                        newestDate = modDate
-                        newestFile = file
-                    }
+                let path = "\(wallpaperPath)/\(file)"
+                let attributes = try FileManager.default.attributesOfItem(atPath: path)
+                if let modDate = attributes[.modificationDate] as? Date, modDate > newestDate {
+                    newestDate = modDate
+                    newestFile = file
                 }
             }
 
             if !newestFile.isEmpty {
-                let wallpaperName = newestFile.replacingOccurrences(of: ".mov", with: "")
-                detectedWallpaper = wallpaperName
-                availableWallpapers = [wallpaperName]
-                print("Detected current wallpaper: \(wallpaperName)")
+                let name = newestFile.replacingOccurrences(of: ".mov", with: "")
+                detectedWallpaper = name
+                availableWallpapers = [name]
+                print("Detected current wallpaper: \(name)")
             } else {
                 detectedWallpaper = "Detection failed"
                 availableWallpapers = []
@@ -92,11 +69,12 @@ class WallpaperManager: ObservableObject {
         }
     }
 
+    // MARK: - Replacing
+
     func replaceWallpaper(
         videoURL: URL,
         progressCallback: @escaping (Double, String) -> Void
     ) async {
-
         print("Starting smart wallpaper replacement...")
         print("Source video: \(videoURL.path)")
 
@@ -106,7 +84,9 @@ class WallpaperManager: ObservableObject {
             detectCurrentWallpaper()
         }
 
-        guard !detectedWallpaper.isEmpty && !detectedWallpaper.contains("No wallpaper") && !detectedWallpaper.contains("Error") else {
+        guard !detectedWallpaper.isEmpty,
+              !detectedWallpaper.contains("No wallpaper"),
+              !detectedWallpaper.contains("Error") else {
             progressCallback(0.0, "No wallpaper detected. Please set a video wallpaper in System Settings first!")
             return
         }
@@ -138,13 +118,44 @@ class WallpaperManager: ObservableObject {
         }
 
         try? FileManager.default.removeItem(atPath: tempVideoPath)
+
         progressCallback(1.0, "Wallpaper replaced! Check System Settings!")
         print("Replacement completed successfully!")
+
+        // ✅ FIX: Touch + restart WallpaperAgent (macOS reloads wallpaper)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            let touchResult = self.runShell("touch", [targetPath])
+            print("Touched new wallpaper file: \(touchResult)")
+
+            let killResult = self.runShell("killall", ["WallpaperAgent"])
+            print("WallpaperAgent killed: \(killResult)")
+        }
     }
 
-    private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
-        print("Requesting admin privileges for complete cleanup operation...")
+    // MARK: - Shell execution helper
 
+    func runShell(_ command: String, _ arguments: [String]) -> String {
+        let task = Process()
+        task.launchPath = "/usr/bin/env"
+        task.arguments = [command] + arguments
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+
+        do {
+            try task.run()
+        } catch {
+            return "Failed to run \(command): \(error)"
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    // MARK: - AppleScript batch (beze změny)
+
+    private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
         await MainActor.run {
             progressCallback(0.5, "Cleaning and installing wallpaper...")
         }
@@ -163,7 +174,7 @@ class WallpaperManager: ObservableObject {
             DispatchQueue.global().async {
                 let appleScript = NSAppleScript(source: batchScript)
                 var error: NSDictionary?
-                let result = appleScript?.executeAndReturnError(&error)
+                let _ = appleScript?.executeAndReturnError(&error)
 
                 if let error = error {
                     print("Batch operation failed: \(error)")
@@ -172,12 +183,6 @@ class WallpaperManager: ObservableObject {
                     print("Complete cleanup successful! All old files removed.")
                     continuation.resume(returning: true)
                 }
-            }
-        }
-
-        if success {
-            await MainActor.run {
-                progressCallback(0.9, "Refreshing system...")
             }
         }
 

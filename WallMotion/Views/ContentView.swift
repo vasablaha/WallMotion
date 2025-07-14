@@ -342,10 +342,7 @@ struct ContentView: View {
                             .fontWeight(.medium)
                     }
                     
-                    Text("\(wallpaperManager.filteredVideos.count) videos available")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 20)
+                  
                 }
                 .padding(.horizontal)
                 .transition(.opacity)
@@ -388,7 +385,7 @@ struct ContentView: View {
             } else if wallpaperManager.selectedCategory == .youtube {
                 youtubeVideoView // NEW: YouTube import view
             } else {
-                videoLibraryView
+                
             }
             
             Divider()
@@ -409,104 +406,7 @@ struct ContentView: View {
         }
     }
     
-    private var videoLibraryView: some View {
-        VStack(spacing: 20) {
-            // Category header
-            if wallpaperManager.selectedCategory != .custom && wallpaperManager.selectedCategory != .youtube {
-                VStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: wallpaperManager.selectedCategory.icon)
-                            .font(.title2)
-                            .foregroundColor(wallpaperManager.selectedCategory.color)
-                        
-                        Text(wallpaperManager.selectedCategory.rawValue)
-                            .font(.title)
-                            .fontWeight(.bold)
-                        
-                        Spacer()
-                        
-                        Text("\(wallpaperManager.filteredVideos.count) videos")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                            .background(Color.gray.opacity(0.2))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    
-                    // Show subcategories for current category
-                    if !wallpaperManager.selectedCategory.subcategories.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(wallpaperManager.selectedCategory.subcategories.prefix(6), id: \.self) { subcategory in
-                                    Text(subcategory)
-                                        .font(.caption)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(wallpaperManager.selectedCategory.color.opacity(0.2))
-                                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                                }
-                                
-                                if wallpaperManager.selectedCategory.subcategories.count > 6 {
-                                    Text("+\(wallpaperManager.selectedCategory.subcategories.count - 6) more")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.gray.opacity(0.1))
-                                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                                }
-                            }
-                            .padding(.horizontal, 30)
-                        }
-                    }
-                }
-                .padding(.horizontal, 30)
-                .padding(.top, 20)
-            }
-            
-            ScrollView {
-                if wallpaperManager.filteredVideos.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 50))
-                            .foregroundColor(.gray.opacity(0.5))
-                        
-                        Text("No videos available")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        
-                        Text("Videos for this category are coming soon!")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(60)
-                } else {
-                    LazyVGrid(columns: [
-                        GridItem(.adaptive(minimum: 280, maximum: 320), spacing: 20)
-                    ], spacing: 20) {
-                        ForEach(wallpaperManager.filteredVideos) { video in
-                            VideoCard(
-                                video: video,
-                                isSelected: selectedLibraryVideo?.id == video.id
-                            ) {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                    selectedLibraryVideo = video
-                                    selectedVideoURL = nil
-                                    selectedYouTubeVideo = nil
-                                    statusMessage = "Selected: \(video.name)"
-                                }
-                            }
-                        }
-                    }
-                    .padding(30)
-                }
-            }
-        }
-        .background(Color.clear)
-    }
+    
     
     private var customVideoView: some View {
         VStack {
