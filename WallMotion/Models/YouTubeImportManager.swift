@@ -2,7 +2,7 @@
 //  YouTubeImportManager.swift
 //  WallMotion
 //
-//  YouTube video import and processing manager
+//  YouTube video import and processing manager - Updated
 //
 
 import Foundation
@@ -93,14 +93,22 @@ class YouTubeImportManager: ObservableObject {
                     print("📝 Parsed lines: \(lines)")
                     
                     if lines.count >= 4 {
+                        let duration = Double(lines[1]) ?? 0
                         let info = YouTubeVideoInfo(
                             title: lines[0],
-                            duration: Double(lines[1]) ?? 0,
+                            duration: duration,
                             thumbnail: lines[2],
                             quality: "\(lines[3])p",
                             url: urlString
                         )
-                        print("✅ Video info parsed successfully: \(info.title)")
+                        
+                        // Update maxDuration based on actual video duration
+                        DispatchQueue.main.async {
+                            self.maxDuration = min(duration, 300.0) // Max 5 minutes for wallpaper
+                            self.selectedEndTime = min(30.0, self.maxDuration)
+                        }
+                        
+                        print("✅ Video info parsed successfully: \(info.title), duration: \(duration)s")
                         continuation.resume(returning: info)
                     } else {
                         print("❌ Invalid video info - expected 4 lines, got \(lines.count)")
@@ -126,7 +134,7 @@ class YouTubeImportManager: ObservableObject {
         isDownloading = true
         downloadProgress = 0.0
         
-        // Create unique filename without extension placeholder
+        // Create unique filename
         let uniqueID = UUID().uuidString
         let baseFilename = "youtube_video_\(uniqueID)"
         let outputTemplate = tempDirectory.appendingPathComponent("\(baseFilename).%(ext)s").path
@@ -146,11 +154,10 @@ class YouTubeImportManager: ObservableObject {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlpPath)
             task.arguments = [
-                "-f", "bestvideo+bestaudio/best",
+                "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]", // Limit to 1080p for performance
                 "--merge-output-format", "mp4",
                 "-o", outputTemplate,
                 "--newline",
-                "--verbose",
                 urlString
             ]
             
@@ -170,7 +177,6 @@ class YouTubeImportManager: ObservableObject {
                 if !data.isEmpty {
                     let output = String(data: data, encoding: .utf8) ?? ""
                     allOutput += output
-                    print("📥 STDOUT: \(output)")
                     self.parseDownloadProgress(output, progressCallback: progressCallback)
                 }
             }
@@ -181,7 +187,6 @@ class YouTubeImportManager: ObservableObject {
                 if !data.isEmpty {
                     let output = String(data: data, encoding: .utf8) ?? ""
                     allErrors += output
-                    print("🔍 STDERR: \(output)")
                     self.parseDownloadProgress(output, progressCallback: progressCallback)
                 }
             }
@@ -199,26 +204,32 @@ class YouTubeImportManager: ObservableObject {
                         self.isDownloading = false
                         
                         print("🏁 Task finished with status: \(task.terminationStatus)")
-                        print("📄 Full output: \(allOutput)")
-                        print("❗ Full errors: \(allErrors)")
                         
                         if task.terminationStatus == 0 {
                             // Find downloaded file
-                            print("🔍 Looking for downloaded file with base: \(baseFilename)")
                             let downloadedFile = self.findDownloadedFile(baseFilename: baseFilename, inDirectory: self.tempDirectory)
                             
                             if let fileURL = downloadedFile {
                                 print("✅ Found downloaded file: \(fileURL.path)")
                                 self.downloadedVideoURL = fileURL
+                                
+                                // Initialize time selector with video duration - FIXED bounds
+                                if let videoInfo = self.videoInfo {
+                                    let videoDuration = max(30, videoInfo.duration) // Minimum 30 seconds
+                                    self.maxDuration = min(videoDuration, 300.0)
+                                    self.selectedStartTime = 0.0
+                                    self.selectedEndTime = min(30.0, self.maxDuration - 5)
+                                }
+                                
                                 continuation.resume(returning: fileURL)
                             } else {
                                 print("❌ Downloaded file not found!")
-                                print("📁 Temp directory contents:")
                                 self.listDirectoryContents(self.tempDirectory)
                                 continuation.resume(throwing: YouTubeError.fileNotFound)
                             }
                         } else {
                             print("❌ Download failed with exit code: \(task.terminationStatus)")
+                            print("❗ Error output: \(allErrors)")
                             continuation.resume(throwing: YouTubeError.downloadFailed)
                         }
                     }
@@ -264,8 +275,9 @@ class YouTubeImportManager: ObservableObject {
                 "-t", String(format: "%.2f", duration),
                 "-c:v", "libx264",
                 "-c:a", "aac",
-                "-preset", "fast",
-                "-crf", "20",
+                "-preset", "medium", // Better quality than "fast"
+                "-crf", "18", // Better quality than "20"
+                "-vf", "scale=-2:1080", // Ensure proper scaling
                 "-movflags", "+faststart",
                 "-y", // Overwrite output file
                 outputPath.path
@@ -278,25 +290,14 @@ class YouTubeImportManager: ObservableObject {
             task.standardOutput = outputPipe
             task.standardError = errorPipe
             
-            var allOutput = ""
             var allErrors = ""
             
-            // Monitor output
-            outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allOutput += output
-                    print("📥 FFmpeg stdout: \(output)")
-                }
-            }
-            
+            // Monitor error output for progress
             errorPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty {
                     let output = String(data: data, encoding: .utf8) ?? ""
                     allErrors += output
-                    print("🔍 FFmpeg stderr: \(output)")
                 }
             }
             
@@ -308,19 +309,17 @@ class YouTubeImportManager: ObservableObject {
                     errorPipe.fileHandleForReading.readabilityHandler = nil
                     
                     print("🏁 FFmpeg finished with status: \(task.terminationStatus)")
-                    print("📄 Full output: \(allOutput)")
-                    print("❗ Full errors: \(allErrors)")
                     
                     if task.terminationStatus == 0 {
                         // Verify output file was created
                         if FileManager.default.fileExists(atPath: outputPath.path) {
                             do {
                                 let attributes = try FileManager.default.attributesOfItem(atPath: outputPath.path)
-                                if let fileSize = attributes[.size] as? Int64 {
+                                if let fileSize = attributes[.size] as? Int64, fileSize > 0 {
                                     print("✅ Trimmed video created: \(outputPath.path) (\(fileSize) bytes)")
                                     continuation.resume()
                                 } else {
-                                    print("❌ Output file has no size information")
+                                    print("❌ Output file is empty")
                                     continuation.resume(throwing: YouTubeError.processingFailed)
                                 }
                             } catch {
@@ -333,6 +332,7 @@ class YouTubeImportManager: ObservableObject {
                         }
                     } else {
                         print("❌ FFmpeg failed with exit code: \(task.terminationStatus)")
+                        print("❗ FFmpeg errors: \(allErrors)")
                         continuation.resume(throwing: YouTubeError.processingFailed)
                     }
                 }
@@ -368,7 +368,7 @@ class YouTubeImportManager: ObservableObject {
                             
                             DispatchQueue.main.async {
                                 self.downloadProgress = progress
-                                progressCallback(progress, "Downloading video... \(Int(percent))%")
+                                progressCallback(progress, "Downloading... \(Int(percent))%")
                             }
                             break
                         }
@@ -380,29 +380,22 @@ class YouTubeImportManager: ObservableObject {
     
     private func findDownloadedFile(baseFilename: String, inDirectory directory: URL) -> URL? {
         print("🔍 Searching for files with base: \(baseFilename)")
-        print("📁 In directory: \(directory.path)")
         
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            print("📄 All files in directory: \(files)")
-            
-            // Look for files that start with our base filename
             let matchingFiles = files.filter { $0.hasPrefix(baseFilename) }
             print("🎯 Matching files: \(matchingFiles)")
             
             if let firstMatch = matchingFiles.first {
                 let fullPath = directory.appendingPathComponent(firstMatch)
-                print("✅ Selected file: \(fullPath.path)")
                 
                 // Verify file exists and has content
                 let attributes = try FileManager.default.attributesOfItem(atPath: fullPath.path)
-                if let fileSize = attributes[.size] as? Int64 {
-                    print("📏 File size: \(fileSize) bytes")
-                    if fileSize > 0 {
-                        return fullPath
-                    } else {
-                        print("❌ File is empty!")
-                    }
+                if let fileSize = attributes[.size] as? Int64, fileSize > 0 {
+                    print("✅ Selected file: \(fullPath.path) (\(fileSize) bytes)")
+                    return fullPath
+                } else {
+                    print("❌ File is empty!")
                 }
             }
         } catch {
@@ -440,6 +433,9 @@ class YouTubeImportManager: ObservableObject {
         videoInfo = nil
         selectedStartTime = 0.0
         selectedEndTime = 30.0
+        maxDuration = 300.0
+        downloadProgress = 0.0
+        statusMessage = ""
     }
 }
 
@@ -479,10 +475,12 @@ enum YouTubeError: LocalizedError {
 extension YouTubeImportManager {
     func checkDependencies() -> (ytdlp: Bool, ffmpeg: Bool) {
         let ytdlpExists = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/yt-dlp") ||
-                         FileManager.default.fileExists(atPath: "/usr/local/bin/yt-dlp")
+                         FileManager.default.fileExists(atPath: "/usr/local/bin/yt-dlp") ||
+                         FileManager.default.fileExists(atPath: "/usr/bin/yt-dlp")
         
         let ffmpegExists = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/ffmpeg") ||
-                          FileManager.default.fileExists(atPath: "/usr/local/bin/ffmpeg")
+                          FileManager.default.fileExists(atPath: "/usr/local/bin/ffmpeg") ||
+                          FileManager.default.fileExists(atPath: "/usr/bin/ffmpeg")
         
         return (ytdlp: ytdlpExists, ffmpeg: ffmpegExists)
     }
@@ -492,17 +490,18 @@ extension YouTubeImportManager {
         var instructions: [String] = []
         
         if !deps.ytdlp {
-            instructions.append("brew install yt-dlp")
+            instructions.append("• Install yt-dlp: brew install yt-dlp")
         }
         
         if !deps.ffmpeg {
-            instructions.append("brew install ffmpeg")
+            instructions.append("• Install ffmpeg: brew install ffmpeg")
         }
         
         if instructions.isEmpty {
-            return "All dependencies are installed!"
+            return "All dependencies are installed! ✅"
         } else {
-            return "Please install missing dependencies:\n\n" + instructions.joined(separator: "\n")
+            return "Missing dependencies:\n\n" + instructions.joined(separator: "\n") +
+                   "\n\nRun these commands in Terminal, then restart WallMotion."
         }
     }
 }
