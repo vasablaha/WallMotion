@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var statusMessage = "Choose a video to get started"
     @State private var showingFilePicker = false
     @State private var showingSuccess = false
+    @State private var showingCategories = true
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -61,11 +62,14 @@ struct ContentView: View {
             Divider()
                 .padding(.horizontal)
             
-            // Categories section - HIDDEN for now
-            // categorySection
-            
-            // Custom video upload section
+            // Main custom video upload section (priority)
             customUploadSection
+            
+            Divider()
+                .padding(.horizontal)
+            
+            // Categories section (expandable)
+            categoriesSection
             
             Divider()
                 .padding(.horizontal)
@@ -111,45 +115,26 @@ struct ContentView: View {
         .padding(.vertical, 30)
     }
     
-    // MARK: - Categories section (hidden)
-    private var categorySection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Categories")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .padding(.horizontal)
-            
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
-                ForEach(VideoCategory.allCases.filter { $0 != .custom }, id: \.self) { category in
-                    CategoryButton(
-                        category: category,
-                        isSelected: wallpaperManager.selectedCategory == category
-                    ) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            wallpaperManager.selectedCategory = category
-                            selectedLibraryVideo = nil
-                            selectedVideoURL = nil
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-        .padding(.vertical)
-    }
-    
-    // MARK: - Custom Upload Section (main focus now)
+    // MARK: - Custom Upload Section (main focus)
     private var customUploadSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Upload Video")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .padding(.horizontal)
+            HStack {
+                Text("Upload Your Video")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Image(systemName: "star.fill")
+                    .foregroundColor(.orange)
+                    .font(.caption)
+            }
+            .padding(.horizontal)
             
-            Button(action: { showingFilePicker = true }) {
+            Button(action: {
+                showingFilePicker = true
+                wallpaperManager.selectedCategory = .custom
+            }) {
                 HStack {
                     Image(systemName: "folder.badge.plus")
                         .foregroundColor(.blue)
@@ -207,6 +192,80 @@ struct ContentView: View {
         .padding(.vertical)
     }
     
+    // MARK: - Categories section (expandable)
+    private var categoriesSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Button(action: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    showingCategories.toggle()
+                }
+            }) {
+                HStack {
+                    Text("Video Library")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Image(systemName: showingCategories ? "chevron.down" : "chevron.right")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .rotationEffect(.degrees(showingCategories ? 0 : 0))
+                        .animation(.spring(response: 0.3), value: showingCategories)
+                }
+                .padding(.horizontal)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if showingCategories {
+                ScrollView {
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 8) {
+                        ForEach(VideoCategory.allCases.filter { $0 != .custom }, id: \.self) { category in
+                            CategoryButton(
+                                category: category,
+                                isSelected: wallpaperManager.selectedCategory == category
+                            ) {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    wallpaperManager.selectedCategory = category
+                                    selectedLibraryVideo = nil
+                                    selectedVideoURL = nil
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                .frame(maxHeight: 300)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+            
+            // Show selected category info
+            if wallpaperManager.selectedCategory != .custom && showingCategories {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Image(systemName: wallpaperManager.selectedCategory.icon)
+                            .foregroundColor(wallpaperManager.selectedCategory.color)
+                        Text("Selected: \(wallpaperManager.selectedCategory.rawValue)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    
+                    Text("\(wallpaperManager.filteredVideos.count) videos available")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 20)
+                }
+                .padding(.horizontal)
+                .transition(.opacity)
+            }
+        }
+        .padding(.vertical)
+    }
+    
     private var detectionSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
@@ -250,24 +309,99 @@ struct ContentView: View {
     }
     
     private var videoLibraryView: some View {
-        ScrollView {
-            LazyVGrid(columns: [
-                GridItem(.adaptive(minimum: 280, maximum: 320), spacing: 20)
-            ], spacing: 20) {
-                ForEach(wallpaperManager.filteredVideos) { video in
-                    VideoCard(
-                        video: video,
-                        isSelected: selectedLibraryVideo?.id == video.id
-                    ) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            selectedLibraryVideo = video
-                            selectedVideoURL = nil
-                            statusMessage = "Selected: \(video.name)"
+        VStack(spacing: 20) {
+            // Category header
+            if wallpaperManager.selectedCategory != .custom {
+                VStack(spacing: 12) {
+                    HStack {
+                        Image(systemName: wallpaperManager.selectedCategory.icon)
+                            .font(.title2)
+                            .foregroundColor(wallpaperManager.selectedCategory.color)
+                        
+                        Text(wallpaperManager.selectedCategory.rawValue)
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        Spacer()
+                        
+                        Text("\(wallpaperManager.filteredVideos.count) videos")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.gray.opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    
+                    // Show subcategories for current category
+                    if !wallpaperManager.selectedCategory.subcategories.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(wallpaperManager.selectedCategory.subcategories.prefix(6), id: \.self) { subcategory in
+                                    Text(subcategory)
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(wallpaperManager.selectedCategory.color.opacity(0.2))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                                
+                                if wallpaperManager.selectedCategory.subcategories.count > 6 {
+                                    Text("+\(wallpaperManager.selectedCategory.subcategories.count - 6) more")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.gray.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                            }
+                            .padding(.horizontal, 30)
                         }
                     }
                 }
+                .padding(.horizontal, 30)
+                .padding(.top, 20)
             }
-            .padding(30)
+            
+            ScrollView {
+                if wallpaperManager.filteredVideos.isEmpty {
+                    VStack(spacing: 20) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 50))
+                            .foregroundColor(.gray.opacity(0.5))
+                        
+                        Text("No videos available")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Videos for this category are coming soon!")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(60)
+                } else {
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 280, maximum: 320), spacing: 20)
+                    ], spacing: 20) {
+                        ForEach(wallpaperManager.filteredVideos) { video in
+                            VideoCard(
+                                video: video,
+                                isSelected: selectedLibraryVideo?.id == video.id
+                            ) {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    selectedLibraryVideo = video
+                                    selectedVideoURL = nil
+                                    statusMessage = "Selected: \(video.name)"
+                                }
+                            }
+                        }
+                    }
+                    .padding(30)
+                }
+            }
         }
         .background(Color.clear)
     }
@@ -444,7 +578,7 @@ struct ContentView: View {
         if !hasWallpaper {
             return "Set a video wallpaper in System Settings first"
         } else if !hasVideo {
-            return "Choose a video file to upload"
+            return "Choose a video file to upload or select from library"
         } else {
             return "Ready to replace your wallpaper"
         }

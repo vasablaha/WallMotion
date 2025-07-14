@@ -12,7 +12,7 @@ class WallpaperManager: ObservableObject {
     @Published var availableWallpapers: [String] = []
     @Published var detectedWallpaper: String = ""
     @Published var videoLibrary: [WallpaperVideo] = []
-    @Published var selectedCategory: VideoCategory = .custom // Changed to custom as default since categories are hidden
+    @Published var selectedCategory: VideoCategory = .custom
     
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
     
@@ -24,7 +24,74 @@ class WallpaperManager: ObservableObject {
     
     func loadVideoLibrary() {
         videoLibrary = [
+            // F1 Category
+            WallpaperVideo(
+                name: "Red Bull RB19 Monaco",
+                category: .f1,
+                duration: "2:45",
+                resolution: "4K",
+                thumbnailName: "redbull_monaco_thumb",
+                fileName: "redbull_monaco.mov",
+                description: "Max Verstappen's Red Bull racing through Monaco streets"
+            ),
+            WallpaperVideo(
+                name: "Ferrari at Monza",
+                category: .f1,
+                duration: "1:58",
+                resolution: "4K",
+                thumbnailName: "ferrari_monza_thumb",
+                fileName: "ferrari_monza.mov",
+                description: "Ferrari SF-23 at the legendary Monza circuit"
+            ),
+            WallpaperVideo(
+                name: "Mercedes W14 Silverstone",
+                category: .f1,
+                duration: "2:30",
+                resolution: "4K",
+                thumbnailName: "mercedes_silverstone_thumb",
+                fileName: "mercedes_silverstone.mov",
+                description: "Mercedes AMG at British Grand Prix"
+            ),
+            
+            // Cars Category
+            WallpaperVideo(
+                name: "Lamborghini Huracán",
+                category: .cars,
+                duration: "3:15",
+                resolution: "4K",
+                thumbnailName: "lambo_huracan_thumb",
+                fileName: "lambo_huracan.mov",
+                description: "Stunning Lamborghini Huracán on mountain roads"
+            ),
+            WallpaperVideo(
+                name: "BMW M3 Night Drive",
+                category: .cars,
+                duration: "2:22",
+                resolution: "4K",
+                thumbnailName: "bmw_m3_night_thumb",
+                fileName: "bmw_m3_night.mov",
+                description: "BMW M3 cruising through neon-lit city streets"
+            ),
+            WallpaperVideo(
+                name: "JDM Skyline R34",
+                category: .cars,
+                duration: "1:45",
+                resolution: "4K",
+                thumbnailName: "skyline_r34_thumb",
+                fileName: "skyline_r34.mov",
+                description: "Iconic Nissan Skyline R34 GT-R drifting"
+            ),
+            
             // Nature Category
+            WallpaperVideo(
+                name: "Alpine Sunrise",
+                category: .nature,
+                duration: "3:30",
+                resolution: "4K",
+                thumbnailName: "alpine_sunrise_thumb",
+                fileName: "alpine_sunrise.mov",
+                description: "Breathtaking sunrise over snow-capped mountains"
+            ),
             WallpaperVideo(
                 name: "Forest Rain",
                 category: .nature,
@@ -35,62 +102,53 @@ class WallpaperManager: ObservableObject {
                 description: "Gentle rain falling through green forest canopy"
             ),
             WallpaperVideo(
-                name: "Mountain Mist",
+                name: "Ocean Waves",
                 category: .nature,
-                duration: "1:45",
-                resolution: "4K",
-                thumbnailName: "mountain_mist_thumb",
-                fileName: "mountain_mist.mov",
-                description: "Misty clouds rolling over mountain peaks"
-            ),
-            WallpaperVideo(
-                name: "Autumn Leaves",
-                category: .nature,
-                duration: "3:00",
-                resolution: "4K",
-                thumbnailName: "autumn_leaves_thumb",
-                fileName: "autumn_leaves.mov",
-                description: "Golden leaves gently falling in autumn breeze"
-            ),
-            
-            // Ocean Category
-            WallpaperVideo(
-                name: "Deep Blue",
-                category: .ocean,
-                duration: "2:15",
-                resolution: "4K",
-                thumbnailName: "deep_blue_thumb",
-                fileName: "deep_blue.mov",
-                description: "Mesmerizing deep ocean waves"
-            ),
-            WallpaperVideo(
-                name: "Coral Garden",
-                category: .ocean,
                 duration: "4:00",
                 resolution: "4K",
-                thumbnailName: "coral_garden_thumb",
-                fileName: "coral_garden.mov",
-                description: "Vibrant coral reef with tropical fish"
+                thumbnailName: "ocean_waves_thumb",
+                fileName: "ocean_waves.mov",
+                description: "Mesmerizing ocean waves on tropical beach"
             ),
             
-            // Abstract Category
+            // Drone Category
             WallpaperVideo(
-                name: "Fluid Motion",
-                category: .abstract,
-                duration: "1:30",
-                resolution: "4K",
-                thumbnailName: "fluid_motion_thumb",
-                fileName: "fluid_motion.mov",
-                description: "Smooth flowing abstract patterns"
-            ),
-            WallpaperVideo(
-                name: "Neon Dreams",
-                category: .abstract,
+                name: "Coastal Cliffs Aerial",
+                category: .drone,
                 duration: "2:45",
                 resolution: "4K",
-                thumbnailName: "neon_dreams_thumb",
-                fileName: "neon_dreams.mov",
-                description: "Colorful neon lights and geometric shapes"
+                thumbnailName: "coastal_cliffs_thumb",
+                fileName: "coastal_cliffs.mov",
+                description: "Dramatic aerial view of rugged coastal cliffs"
+            ),
+            WallpaperVideo(
+                name: "City from Above",
+                category: .drone,
+                duration: "1:55",
+                resolution: "4K",
+                thumbnailName: "city_above_thumb",
+                fileName: "city_above.mov",
+                description: "Urban landscape captured from drone perspective"
+            ),
+            
+            // Anime Category
+            WallpaperVideo(
+                name: "Ghibli Forest",
+                category: .anime,
+                duration: "3:20",
+                resolution: "4K",
+                thumbnailName: "ghibli_forest_thumb",
+                fileName: "ghibli_forest.mov",
+                description: "Studio Ghibli inspired magical forest animation"
+            ),
+            WallpaperVideo(
+                name: "Cyberpunk Anime City",
+                category: .anime,
+                duration: "2:10",
+                resolution: "4K",
+                thumbnailName: "cyberpunk_anime_thumb",
+                fileName: "cyberpunk_anime.mov",
+                description: "Anime-style cyberpunk cityscape with neon lights"
             ),
             
             // Space Category
@@ -101,31 +159,140 @@ class WallpaperManager: ObservableObject {
                 resolution: "4K",
                 thumbnailName: "galaxy_spiral_thumb",
                 fileName: "galaxy_spiral.mov",
-                description: "Stunning spiral galaxy rotation"
+                description: "Stunning spiral galaxy rotation in deep space"
             ),
             WallpaperVideo(
-                name: "Nebula",
+                name: "Earth from ISS",
                 category: .space,
-                duration: "2:00",
+                duration: "2:15",
                 resolution: "4K",
-                thumbnailName: "nebula_thumb",
-                fileName: "nebula.mov",
-                description: "Colorful cosmic nebula clouds"
+                thumbnailName: "earth_iss_thumb",
+                fileName: "earth_iss.mov",
+                description: "Earth as seen from International Space Station"
             ),
             
-            // Minimal Category
+            // Cyberpunk Category
             WallpaperVideo(
-                name: "Clean Waves",
-                category: .minimal,
-                duration: "1:20",
+                name: "Tokyo Neon Night",
+                category: .cyberpunk,
+                duration: "2:40",
                 resolution: "4K",
-                thumbnailName: "clean_waves_thumb",
-                fileName: "clean_waves.mov",
-                description: "Simple, elegant wave animation"
+                thumbnailName: "tokyo_neon_thumb",
+                fileName: "tokyo_neon.mov",
+                description: "Neon-lit Tokyo streets in Blade Runner style"
+            ),
+            WallpaperVideo(
+                name: "Cyber Rain",
+                category: .cyberpunk,
+                duration: "1:50",
+                resolution: "4K",
+                thumbnailName: "cyber_rain_thumb",
+                fileName: "cyber_rain.mov",
+                description: "Futuristic city with digital rain effects"
+            ),
+            
+            // Gaming Category
+            WallpaperVideo(
+                name: "Minecraft Timelapse",
+                category: .gaming,
+                duration: "2:25",
+                resolution: "4K",
+                thumbnailName: "minecraft_build_thumb",
+                fileName: "minecraft_build.mov",
+                description: "Epic Minecraft castle build timelapse"
+            ),
+            WallpaperVideo(
+                name: "Cyberpunk 2077 City",
+                category: .gaming,
+                duration: "3:05",
+                resolution: "4K",
+                thumbnailName: "cp2077_city_thumb",
+                fileName: "cp2077_city.mov",
+                description: "Night City inspired futuristic metropolis"
+            ),
+            
+            // Lo-fi Category
+            WallpaperVideo(
+                name: "Cozy Study Room",
+                category: .lofi,
+                duration: "4:30",
+                resolution: "4K",
+                thumbnailName: "cozy_study_thumb",
+                fileName: "cozy_study.mov",
+                description: "Warm, cozy study room with gentle lighting"
+            ),
+            WallpaperVideo(
+                name: "Rain on Window",
+                category: .lofi,
+                duration: "5:00",
+                resolution: "4K",
+                thumbnailName: "rain_window_thumb",
+                fileName: "rain_window.mov",
+                description: "Relaxing rain drops on coffee shop window"
+            ),
+            
+            // Animals Category
+            WallpaperVideo(
+                name: "Minimalist Cat",
+                category: .animals,
+                duration: "1:30",
+                resolution: "4K",
+                thumbnailName: "minimal_cat_thumb",
+                fileName: "minimal_cat.mov",
+                description: "Stylized cat animation in minimal design"
+            ),
+            WallpaperVideo(
+                name: "Forest Fox",
+                category: .animals,
+                duration: "2:15",
+                resolution: "4K",
+                thumbnailName: "forest_fox_thumb",
+                fileName: "forest_fox.mov",
+                description: "Cute fox in magical forest setting"
+            ),
+            
+            // Aesthetic Category
+            WallpaperVideo(
+                name: "Dark Academia Library",
+                category: .aesthetics,
+                duration: "3:45",
+                resolution: "4K",
+                thumbnailName: "dark_academia_thumb",
+                fileName: "dark_academia.mov",
+                description: "Atmospheric old library with warm lighting"
+            ),
+            WallpaperVideo(
+                name: "Vaporwave Sunset",
+                category: .aesthetics,
+                duration: "2:35",
+                resolution: "4K",
+                thumbnailName: "vaporwave_thumb",
+                fileName: "vaporwave.mov",
+                description: "Retro 80s synthwave aesthetic sunset"
+            ),
+            
+            // Seasonal Category
+            WallpaperVideo(
+                name: "Autumn Leaves Fall",
+                category: .seasonal,
+                duration: "3:00",
+                resolution: "4K",
+                thumbnailName: "autumn_leaves_thumb",
+                fileName: "autumn_leaves.mov",
+                description: "Golden autumn leaves gently falling"
+            ),
+            WallpaperVideo(
+                name: "Winter Snowfall",
+                category: .seasonal,
+                duration: "2:50",
+                resolution: "4K",
+                thumbnailName: "winter_snow_thumb",
+                fileName: "winter_snow.mov",
+                description: "Peaceful snowfall in winter forest"
             )
         ]
         
-        print("Loaded \(videoLibrary.count) videos in library")
+        print("Loaded \(videoLibrary.count) videos across \(VideoCategory.allCases.count) categories")
     }
     
     var filteredVideos: [WallpaperVideo] {
