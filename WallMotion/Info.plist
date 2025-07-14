@@ -2,9 +2,130 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key></key>
-	<string></string>
-	<key>nSAppleEventsUsageDescription</key>
-	<string>WallMotion needs AppleScript access to request administrator privileges</string>
+    <!-- App Information -->
+    <key>CFBundleName</key>
+    <string>WallMotion</string>
+    <key>CFBundleDisplayName</key>
+    <string>WallMotion</string>
+    <key>CFBundleIdentifier</key>
+    <string>tapp-studio.WallMotion</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    
+    <!-- URL Schemes for Authentication -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>WallMotion Authentication</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>wallmotion</string>
+            </array>
+            <key>CFBundleURLIconFile</key>
+            <string>AppIcon</string>
+        </dict>
+    </array>
+    
+    <!-- Permissions -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>WallMotion needs AppleScript access to set wallpapers and request administrator privileges for system modifications.</string>
+    
+    <key>NSSystemAdministrationUsageDescription</key>
+    <string>WallMotion requires administrator access to replace system wallpaper files in protected directories.</string>
+    
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>WallMotion may access your Desktop to help you select video files for wallpapers.</string>
+    
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>WallMotion may access your Documents folder to help you select video files for wallpapers.</string>
+    
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>WallMotion may access your Downloads folder to help you select video files for wallpapers.</string>
+    
+    <key>NSMoviesFolderUsageDescription</key>
+    <string>WallMotion may access your Movies folder to help you select video files for wallpapers.</string>
+    
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>WallMotion may access network volumes to help you select video files for wallpapers.</string>
+    
+    <!-- Network Usage -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>wallmotion.eu</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+            </dict>
+            <key>localhost</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.0</string>
+            </dict>
+        </dict>
+    </dict>
+    
+    <!-- App Category -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.graphics-design</string>
+    
+    <!-- Supported File Types -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Video Files</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.movie</string>
+                <string>com.apple.quicktime-movie</string>
+                <string>public.mpeg-4</string>
+            </array>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
+    
+    <!-- High Resolution Support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+    <!-- Main Storyboard -->
+    <key>NSMainStoryboardFile</key>
+    <string>Main</string>
+    
+    <!-- Minimum System Version -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    
+    <!-- Copyright -->
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2025 Tapp Studio. All rights reserved.</string>
+    
+    <!-- App Store Information -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    
+    <!-- Background Modes (if needed for future features) -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>background-processing</string>
+    </array>
 </dict>
 </plist>
