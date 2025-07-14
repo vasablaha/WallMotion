@@ -74,13 +74,13 @@ struct ContentView: View {
             
             Divider()
                 .padding(.horizontal)
-            
+            /*
             // Categories section (expandable)
             categoriesSection
-            
+           
             Divider()
                 .padding(.horizontal)
-            
+             */
             detectionSection
             
             Spacer()
