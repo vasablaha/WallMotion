@@ -1,5 +1,5 @@
 //
-//  ContentView.swift
+//  ContentView.swift (Updated with YouTube Import)
 //  WallMotion
 //
 //  Created by Václav Blaha on 13.07.2025.
@@ -14,6 +14,7 @@ struct ContentView: View {
     @StateObject private var wallpaperManager = WallpaperManager()
     @State private var selectedVideoURL: URL?
     @State private var selectedLibraryVideo: WallpaperVideo?
+    @State private var selectedYouTubeVideo: URL? // NEW: For YouTube processed videos
     @State private var isProcessing = false
     @State private var progress: Double = 0.0
     @State private var statusMessage = "Choose a video to get started"
@@ -64,6 +65,12 @@ struct ContentView: View {
             
             // Main custom video upload section (priority)
             customUploadSection
+            
+            Divider()
+                .padding(.horizontal)
+            
+            // NEW: YouTube import section
+            youtubeImportSection
             
             Divider()
                 .padding(.horizontal)
@@ -192,6 +199,85 @@ struct ContentView: View {
         .padding(.vertical)
     }
     
+    // MARK: - NEW: YouTube Import Section
+    private var youtubeImportSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Text("YouTube Import")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Image(systemName: "globe")
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+            .padding(.horizontal)
+            
+            Button(action: {
+                wallpaperManager.selectedCategory = .youtube
+                selectedLibraryVideo = nil
+                selectedVideoURL = nil
+                selectedYouTubeVideo = nil
+            }) {
+                HStack {
+                    Image(systemName: "play.rectangle.on.rectangle.fill")
+                        .foregroundColor(.red)
+                        .font(.title2)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Import from YouTube")
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        Text("Download and customize any video")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.red.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .padding(.horizontal)
+            
+            // Show selected YouTube video info
+            if let youtubeURL = selectedYouTubeVideo {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("YouTube Video Ready")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                    }
+                    
+                    Text(youtubeURL.lastPathComponent)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .padding(.leading, 20)
+                }
+                .padding(.horizontal)
+            }
+        }
+        .padding(.vertical)
+    }
+    
     // MARK: - Categories section (expandable)
     private var categoriesSection: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -224,7 +310,8 @@ struct ContentView: View {
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 8) {
-                        ForEach(VideoCategory.allCases.filter { $0 != .custom }, id: \.self) { category in
+                        // Exclude custom and youtube from library categories
+                        ForEach(VideoCategory.allCases.filter { $0 != .custom && $0 != .youtube }, id: \.self) { category in
                             CategoryButton(
                                 category: category,
                                 isSelected: wallpaperManager.selectedCategory == category
@@ -233,6 +320,7 @@ struct ContentView: View {
                                     wallpaperManager.selectedCategory = category
                                     selectedLibraryVideo = nil
                                     selectedVideoURL = nil
+                                    selectedYouTubeVideo = nil
                                 }
                             }
                         }
@@ -244,7 +332,7 @@ struct ContentView: View {
             }
             
             // Show selected category info
-            if wallpaperManager.selectedCategory != .custom && showingCategories {
+            if wallpaperManager.selectedCategory != .custom && wallpaperManager.selectedCategory != .youtube && showingCategories {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Image(systemName: wallpaperManager.selectedCategory.icon)
@@ -297,6 +385,8 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if wallpaperManager.selectedCategory == .custom {
                 customVideoView
+            } else if wallpaperManager.selectedCategory == .youtube {
+                youtubeVideoView // NEW: YouTube import view
             } else {
                 videoLibraryView
             }
@@ -308,10 +398,21 @@ struct ContentView: View {
         .background(Color.clear)
     }
     
+    // MARK: - NEW: YouTube Video View
+    private var youtubeVideoView: some View {
+        YouTubeImportView { processedVideoURL in
+            // Handle the processed YouTube video
+            selectedYouTubeVideo = processedVideoURL
+            selectedVideoURL = nil
+            selectedLibraryVideo = nil
+            statusMessage = "YouTube video ready: \(processedVideoURL.lastPathComponent)"
+        }
+    }
+    
     private var videoLibraryView: some View {
         VStack(spacing: 20) {
             // Category header
-            if wallpaperManager.selectedCategory != .custom {
+            if wallpaperManager.selectedCategory != .custom && wallpaperManager.selectedCategory != .youtube {
                 VStack(spacing: 12) {
                     HStack {
                         Image(systemName: wallpaperManager.selectedCategory.icon)
@@ -394,6 +495,7 @@ struct ContentView: View {
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                     selectedLibraryVideo = video
                                     selectedVideoURL = nil
+                                    selectedYouTubeVideo = nil
                                     statusMessage = "Selected: \(video.name)"
                                 }
                             }
@@ -570,7 +672,7 @@ struct ContentView: View {
     }
     
     private func getInstructionText() -> String {
-        let hasVideo = selectedVideoURL != nil || selectedLibraryVideo != nil
+        let hasVideo = selectedVideoURL != nil || selectedLibraryVideo != nil || selectedYouTubeVideo != nil
         let hasWallpaper = !wallpaperManager.detectedWallpaper.isEmpty &&
                           !wallpaperManager.detectedWallpaper.contains("No wallpaper") &&
                           !wallpaperManager.detectedWallpaper.contains("Error")
@@ -578,14 +680,14 @@ struct ContentView: View {
         if !hasWallpaper {
             return "Set a video wallpaper in System Settings first"
         } else if !hasVideo {
-            return "Choose a video file to upload or select from library"
+            return "Choose a video file, import from YouTube, or select from library"
         } else {
             return "Ready to replace your wallpaper"
         }
     }
     
     private var isReadyToReplace: Bool {
-        let hasVideo = selectedVideoURL != nil || selectedLibraryVideo != nil
+        let hasVideo = selectedVideoURL != nil || selectedLibraryVideo != nil || selectedYouTubeVideo != nil
         let hasWallpaper = !wallpaperManager.detectedWallpaper.isEmpty &&
                           !wallpaperManager.detectedWallpaper.contains("No wallpaper") &&
                           !wallpaperManager.detectedWallpaper.contains("Error")
@@ -598,6 +700,7 @@ struct ContentView: View {
             if let url = urls.first {
                 selectedVideoURL = url
                 selectedLibraryVideo = nil
+                selectedYouTubeVideo = nil
                 wallpaperManager.selectedCategory = .custom
                 print("Custom video selected: \(url.path)")
                 statusMessage = "Custom video ready: \(url.lastPathComponent)"
@@ -622,6 +725,8 @@ struct ContentView: View {
             }
         } else if let customURL = selectedVideoURL {
             videoURL = customURL
+        } else if let youtubeURL = selectedYouTubeVideo { // NEW: Handle YouTube videos
+            videoURL = youtubeURL
         }
         
         guard let finalURL = videoURL else {

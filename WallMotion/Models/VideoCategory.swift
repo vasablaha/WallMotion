@@ -9,6 +9,7 @@ import SwiftUI
 
 enum VideoCategory: String, CaseIterable {
     case custom = "Custom Upload"
+    case youtube = "YouTube Import" // NEW: YouTube import category
     case f1 = "F1"
     case cars = "Cars"
     case nature = "Nature"
@@ -31,6 +32,7 @@ enum VideoCategory: String, CaseIterable {
     var icon: String {
         switch self {
         case .custom: return "folder.badge.plus"
+        case .youtube: return "play.rectangle.on.rectangle.fill" // NEW
         case .f1: return "car.circle"
         case .cars: return "car.fill"
         case .nature: return "leaf.fill"
@@ -55,6 +57,7 @@ enum VideoCategory: String, CaseIterable {
     var color: Color {
         switch self {
         case .custom: return .orange
+        case .youtube: return .red // NEW: YouTube red color
         case .f1: return .red
         case .cars: return .gray
         case .nature: return .green
@@ -80,6 +83,8 @@ enum VideoCategory: String, CaseIterable {
         switch self {
         case .custom:
             return []
+        case .youtube: // NEW: YouTube subcategories
+            return ["Music Videos", "Nature & Travel", "Gaming Content", "Animations", "Tutorials", "Vlogs", "Short Clips", "Live Recordings"]
         case .f1:
             return ["Red Bull Racing", "Mercedes-AMG Petronas", "Ferrari", "McLaren", "Aston Martin", "Alpine", "Williams", "Haas", "AlphaTauri", "Stake (ex-Alfa Romeo)"]
         case .cars:
