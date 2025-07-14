@@ -22,35 +22,35 @@ struct YouTubeImportView: View {
     let onVideoReady: (URL) -> Void
     
     var body: some View {
-        VStack(spacing: 24) {
-            headerSection
-            
-            // Current Status Indicator
-            currentStatusSection
-            
-            if importManager.downloadedVideoURL == nil {
-                urlInputSection
-            } else {
-                videoPreviewSection
+        ScrollView {
+            VStack(spacing: 24) {
+                headerSection
+                
+                // Current Status Indicator
+                currentStatusSection
+                
+                if importManager.downloadedVideoURL == nil {
+                    urlInputSection
+                } else {
+                    videoPreviewSection
+                }
+                
+                if showingVideoInfo {
+                    videoInfoSection
+                }
+                
+                if showingTimeSelector {
+                    timeSelectorSection
+                }
+                
+                if isProcessing {
+                    processingSection
+                }
+                
+                actionButtonsSection
             }
-            
-            if showingVideoInfo {
-                videoInfoSection
-            }
-            
-            if showingTimeSelector {
-                timeSelectorSection
-            }
-            
-            if isProcessing {
-                processingSection
-            }
-            
-            actionButtonsSection
-            
-            Spacer()
+            .padding(30)
         }
-        .padding(30)
         .onAppear {
             checkDependencies()
         }
