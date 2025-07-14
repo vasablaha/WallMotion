@@ -146,7 +146,7 @@ class YouTubeImportManager: ObservableObject {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlpPath)
             task.arguments = [
-                "-f", "best[height<=1080]/best",
+                "-f", "bestvideo+bestaudio/best",
                 "--merge-output-format", "mp4",
                 "-o", outputTemplate,
                 "--newline",
