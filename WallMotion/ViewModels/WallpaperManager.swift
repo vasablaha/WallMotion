@@ -109,9 +109,8 @@ class WallpaperManager: ObservableObject {
             return
         }
 
-        progressCallback(0.4, "Requesting admin access...")
+        progressCallback(0.4, "Requesting admin access (ONE TIME ONLY)...")
 
-        // FIXED: All operations including touch now in single AppleScript with admin privileges
         guard await executeAllCommands(tempVideoPath: tempVideoPath, targetPath: targetPath, backupPath: backupPath, progressCallback: progressCallback) else {
             try? FileManager.default.removeItem(atPath: tempVideoPath)
             progressCallback(0.0, "Installation failed")
@@ -122,9 +121,18 @@ class WallpaperManager: ObservableObject {
 
         progressCallback(1.0, "Wallpaper replaced! Check System Settings!")
         print("Replacement completed successfully!")
+
+        // ✅ FIX: Touch + restart WallpaperAgent (macOS reloads wallpaper)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            let touchResult = self.runShell("touch", [targetPath])
+            print("Touched new wallpaper file: \(touchResult)")
+
+            let killResult = self.runShell("killall", ["WallpaperAgent"])
+            print("WallpaperAgent killed: \(killResult)")
+        }
     }
 
-    // MARK: - Shell execution helper (kept for debugging only)
+    // MARK: - Shell execution helper
 
     func runShell(_ command: String, _ arguments: [String]) -> String {
         let task = Process()
@@ -145,31 +153,20 @@ class WallpaperManager: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    // MARK: - FIXED AppleScript batch with touch operation included
+    // MARK: - AppleScript batch (beze změny)
 
     private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
         await MainActor.run {
-            progressCallback(0.5, "Installing wallpaper and refreshing system...")
+            progressCallback(0.5, "Cleaning and installing wallpaper...")
         }
 
-        // FIXED: Include touch and killall in the same admin AppleScript operation
         let batchScript = """
         do shell script "
-        # Backup current wallpaper
         cp '\(targetPath)' '\(backupPath)'
-        
-        # Clean old files
         find '\(wallpaperPath)' -name '*.mov' -type f -delete
-        find '\(wallpaperPath)' -name '*.backup.*' -mtime +7 -type f -delete
-        
-        # Install new wallpaper
+        find '\(wallpaperPath)' -name '*.backup.*' -type f -delete
         cp '\(tempVideoPath)' '\(targetPath)'
-        
-        # Touch file and restart WallpaperAgent (FIXED: with admin privileges)
-        touch '\(targetPath)'
         killall WallpaperAgent 2>/dev/null || true
-        
-        echo 'Wallpaper installation completed'
         " with administrator privileges
         """
 
@@ -177,16 +174,13 @@ class WallpaperManager: ObservableObject {
             DispatchQueue.global().async {
                 let appleScript = NSAppleScript(source: batchScript)
                 var error: NSDictionary?
-                let result = appleScript?.executeAndReturnError(&error)
+                let _ = appleScript?.executeAndReturnError(&error)
 
                 if let error = error {
-                    print("❌ Batch operation failed: \(error)")
+                    print("Batch operation failed: \(error)")
                     continuation.resume(returning: false)
                 } else {
-                    if let resultString = result?.stringValue {
-                        print("✅ AppleScript result: \(resultString)")
-                    }
-                    print("✅ Complete wallpaper installation successful!")
+                    print("Complete cleanup successful! All old files removed.")
                     continuation.resume(returning: true)
                 }
             }

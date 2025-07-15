@@ -2,7 +2,7 @@
 //  YouTubeImportView.swift
 //  WallMotion
 //
-//  YouTube video import UI component - Updated Design
+//  YouTube video import UI component
 //
 
 import SwiftUI
@@ -11,6 +11,8 @@ import AVKit
 struct YouTubeImportView: View {
     @StateObject private var importManager = YouTubeImportManager()
     @State private var youtubeURL = ""
+    @State private var showingVideoInfo = false
+    @State private var showingTimeSelector = false
     @State private var showingDependencyAlert = false
     @State private var dependencyMessage = ""
     @State private var isProcessing = false
@@ -24,13 +26,20 @@ struct YouTubeImportView: View {
             VStack(spacing: 24) {
                 headerSection
                 
+                // Current Status Indicator
+                currentStatusSection
+                
                 if importManager.downloadedVideoURL == nil {
                     urlInputSection
-                    if importManager.videoInfo != nil {
-                        videoInfoSection
-                    }
                 } else {
-                    videoDownloadedSection
+                    videoPreviewSection
+                }
+                
+                if showingVideoInfo {
+                    videoInfoSection
+                }
+                
+                if showingTimeSelector {
                     timeSelectorSection
                 }
                 
@@ -50,6 +59,78 @@ struct YouTubeImportView: View {
         } message: {
             Text(dependencyMessage)
         }
+    }
+    
+    // MARK: - Current Status Section
+    
+    private var currentStatusSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Current Status")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Spacer()
+            }
+            
+            HStack(spacing: 16) {
+                // Step 1: URL Input
+                StatusStep(
+                    icon: "link",
+                    title: "URL",
+                    isCompleted: !youtubeURL.isEmpty && importManager.validateYouTubeURL(youtubeURL),
+                    isCurrent: youtubeURL.isEmpty || !importManager.validateYouTubeURL(youtubeURL)
+                )
+                
+                StatusConnector()
+                
+                // Step 2: Video Info
+                StatusStep(
+                    icon: "info.circle",
+                    title: "Info",
+                    isCompleted: importManager.videoInfo != nil,
+                    isCurrent: !youtubeURL.isEmpty && importManager.validateYouTubeURL(youtubeURL) && importManager.videoInfo == nil
+                )
+                
+                StatusConnector()
+                
+                // Step 3: Download
+                StatusStep(
+                    icon: "arrow.down.circle",
+                    title: "Download",
+                    isCompleted: importManager.downloadedVideoURL != nil,
+                    isCurrent: importManager.isDownloading
+                )
+                
+                StatusConnector()
+                
+                // Step 4: Trim
+                StatusStep(
+                    icon: "scissors",
+                    title: "Trim",
+                    isCompleted: false,
+                    isCurrent: importManager.downloadedVideoURL != nil && !isProcessing
+                )
+                
+                StatusConnector()
+                
+                // Step 5: Ready
+                StatusStep(
+                    icon: "checkmark.circle",
+                    title: "Ready",
+                    isCompleted: false,
+                    isCurrent: isProcessing
+                )
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.gray.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
     
     // MARK: - Header Section
@@ -83,14 +164,14 @@ struct YouTubeImportView: View {
     
     private var urlInputSection: some View {
         VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("YouTube Video URL")
                     .font(.headline)
                     .fontWeight(.semibold)
                 
-                HStack(spacing: 12) {
+                HStack {
                     TextField("https://youtube.com/watch?v=...", text: $youtubeURL)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
                         .onSubmit {
                             if importManager.validateYouTubeURL(youtubeURL) {
                                 fetchVideoInfo()
@@ -98,38 +179,46 @@ struct YouTubeImportView: View {
                         }
                     
                     Button(action: fetchVideoInfo) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                            Text("Get Info")
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Circle().fill(.blue))
                     }
-                    .buttonStyle(PlainButtonStyle())
                     .disabled(youtubeURL.isEmpty || !importManager.validateYouTubeURL(youtubeURL))
                 }
-                
-                // URL validation feedback
-                if !youtubeURL.isEmpty {
-                    HStack(spacing: 8) {
-                        Image(systemName: importManager.validateYouTubeURL(youtubeURL) ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(importManager.validateYouTubeURL(youtubeURL) ? .green : .red)
-                        
-                        Text(importManager.validateYouTubeURL(youtubeURL) ? "Valid YouTube URL" : "Invalid YouTube URL")
-                            .font(.caption)
-                            .foregroundColor(importManager.validateYouTubeURL(youtubeURL) ? .green : .red)
-                        
-                        Spacer()
-                    }
+            }
+            
+            // URL validation feedback
+            if !youtubeURL.isEmpty {
+                HStack {
+                    Image(systemName: importManager.validateYouTubeURL(youtubeURL) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(importManager.validateYouTubeURL(youtubeURL) ? .green : .red)
+                    
+                    Text(importManager.validateYouTubeURL(youtubeURL) ? "Valid YouTube URL" : "Invalid YouTube URL")
+                        .font(.caption)
+                        .foregroundColor(importManager.validateYouTubeURL(youtubeURL) ? .green : .red)
+                    
+                    Spacer()
                 }
             }
+            
+            // Example URLs
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Supported formats:")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("• youtube.com/watch?v=VIDEO_ID")
+                    Text("• youtu.be/VIDEO_ID")
+                    Text("• youtube.com/embed/VIDEO_ID")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
         }
-        .padding(20)
+        .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -145,55 +234,56 @@ struct YouTubeImportView: View {
     private var videoInfoSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let videoInfo = importManager.videoInfo {
-                HStack(spacing: 16) {
-                    // Thumbnail
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(videoInfo.title)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .lineLimit(2)
+                        
+                        HStack {
+                            Label("\(formatDuration(videoInfo.duration))", systemImage: "clock")
+                            Label(videoInfo.quality, systemImage: "video")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        
+                        // Show download location
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Download to:")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                            
+                            Text(importManager.tempDirectory.path)
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                                .lineLimit(1)
+                        }
+                        .padding(.top, 4)
+                    }
+                    
+                    Spacer()
+                    
                     AsyncImage(url: URL(string: videoInfo.thumbnail)) { image in
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 8)
                             .fill(.gray.opacity(0.3))
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .foregroundColor(.gray)
-                            )
                     }
-                    .frame(width: 120, height: 90)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(videoInfo.title)
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .lineLimit(3)
-                        
-                        HStack(spacing: 16) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock")
-                                    .font(.caption)
-                                Text(formatDuration(videoInfo.duration))
-                                    .font(.caption)
-                            }
-                            .foregroundColor(.secondary)
-                            
-                            HStack(spacing: 4) {
-                                Image(systemName: "video")
-                                    .font(.caption)
-                                Text(videoInfo.quality)
-                                    .font(.caption)
-                            }
-                            .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
+                    .frame(width: 80, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 
-                // Download progress or button
+                // Download progress (if downloading)
                 if importManager.isDownloading {
                     VStack(spacing: 12) {
                         HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            
                             Text("Downloading...")
                                 .font(.headline)
                                 .fontWeight(.medium)
@@ -208,31 +298,50 @@ struct YouTubeImportView: View {
                         
                         ProgressView(value: importManager.downloadProgress)
                             .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            .scaleEffect(y: 1.5)
                         
-                        Button("Cancel") {
+                        Button("Cancel Download") {
                             importManager.cancelDownload()
                         }
                         .font(.subheadline)
                         .foregroundColor(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(.red, lineWidth: 1)
+                        )
                     }
                 } else {
+                    // Download button
                     Button(action: downloadVideo) {
-                        HStack(spacing: 8) {
+                        HStack {
                             Image(systemName: "arrow.down.circle.fill")
+                                .font(.title2)
                             Text("Download Video")
+                                .font(.headline)
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(.blue)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue, .cyan],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .scaleEffect(1.02)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: importManager.isDownloading)
                 }
             }
         }
-        .padding(20)
+        .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -244,54 +353,41 @@ struct YouTubeImportView: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
     
-    // MARK: - Video Downloaded Section
+    // MARK: - Video Preview Section
     
-    private var videoDownloadedSection: some View {
+    private var videoPreviewSection: some View {
         VStack(spacing: 16) {
-            HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                    .font(.title2)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Video Downloaded!")
+            if let videoURL = importManager.downloadedVideoURL {
+                VStack(spacing: 12) {
+                    Text("Video Downloaded Successfully!")
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.green)
                     
-                    if let videoURL = importManager.downloadedVideoURL {
-                        Text(videoURL.lastPathComponent)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                
-                Spacer()
-            }
-            
-            // Simple video preview (without player controls)
-            if let videoURL = importManager.downloadedVideoURL {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.black.opacity(0.1))
-                    .frame(height: 160)
-                    .overlay(
-                        VStack {
-                            Image(systemName: "play.circle.fill")
-                                .font(.largeTitle)
-                                .foregroundColor(.white.opacity(0.8))
-                            Text("Video Ready")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.8))
+                    // Video player preview
+                    VideoPlayer(player: AVPlayer(url: videoURL))
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(.gray.opacity(0.3), lineWidth: 1)
+                        )
+                    
+                    Button("Select Time Range") {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            showingTimeSelector = true
                         }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.gray.opacity(0.3), lineWidth: 1)
-                    )
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
             }
         }
-        .padding(20)
+        .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -302,116 +398,87 @@ struct YouTubeImportView: View {
         )
     }
     
-    // MARK: - Time Selector Section (Fixed)
+    // MARK: - Time Selector Section
     
     private var timeSelectorSection: some View {
-        VStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Select Wallpaper Duration")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+        VStack(spacing: 16) {
+            Text("Select Wallpaper Duration")
+                .font(.headline)
+                .fontWeight(.semibold)
+            
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Start:")
+                        .fontWeight(.medium)
+                    Spacer()
+                    Text(formatTime(importManager.selectedStartTime))
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                }
                 
-                Text("Choose the portion of video you want as wallpaper")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                Slider(
+                    value: $importManager.selectedStartTime,
+                    in: 0...(importManager.maxDuration - 10),
+                    step: 1
+                ) {
+                    Text("Start Time")
+                } minimumValueLabel: {
+                    Text("0:00")
+                        .font(.caption)
+                } maximumValueLabel: {
+                    Text(formatTime(importManager.maxDuration - 10))
+                        .font(.caption)
+                }
+                .onChange(of: importManager.selectedStartTime) { newValue in
+                    if importManager.selectedEndTime <= newValue + 5 {
+                        importManager.selectedEndTime = min(newValue + 30, importManager.maxDuration)
+                    }
+                }
             }
             
-            VStack(spacing: 16) {
-                // Duration info
+            VStack(spacing: 12) {
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Start Time")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                        Text(formatTime(safeStartTime))
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                    }
-                    
+                    Text("End:")
+                        .fontWeight(.medium)
                     Spacer()
-                    
-                    VStack(spacing: 4) {
-                        Text("Duration")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                        Text(formatTime(safeEndTime - safeStartTime))
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.green)
-                    }
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("End Time")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                        Text(formatTime(safeEndTime))
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                    }
+                    Text(formatTime(importManager.selectedEndTime))
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
                 }
-                .padding(.horizontal, 4)
                 
-                // Fixed range sliders with proper bounds
-                VStack(spacing: 12) {
-                    Text("Drag to select time range (recommended: 30-60 seconds)")
+                Slider(
+                    value: $importManager.selectedEndTime,
+                    in: (importManager.selectedStartTime + 5)...importManager.maxDuration,
+                    step: 1
+                ) {
+                    Text("End Time")
+                } minimumValueLabel: {
+                    Text(formatTime(importManager.selectedStartTime + 5))
                         .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                    
-                    VStack(spacing: 8) {
-                        Text("Start: \(formatTime(safeStartTime))")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                        
-                        Slider(
-                            value: Binding(
-                                get: { safeStartTime },
-                                set: { newValue in
-                                    let clampedStart = max(0, min(newValue, safeMaxDuration - 10))
-                                    importManager.selectedStartTime = clampedStart
-                                    
-                                    // Ensure end time is always at least 10 seconds after start
-                                    if importManager.selectedEndTime < clampedStart + 10 {
-                                        importManager.selectedEndTime = min(clampedStart + 30, safeMaxDuration)
-                                    }
-                                }
-                            ),
-                            in: 0...max(0, safeMaxDuration - 10),
-                            step: 1
-                        )
-                        .accentColor(.blue)
-                    }
-                    
-                    VStack(spacing: 8) {
-                        Text("End: \(formatTime(safeEndTime))")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                        
-                        Slider(
-                            value: Binding(
-                                get: { safeEndTime },
-                                set: { newValue in
-                                    let minEnd = safeStartTime + 10
-                                    let clampedEnd = max(minEnd, min(newValue, safeMaxDuration))
-                                    importManager.selectedEndTime = clampedEnd
-                                }
-                            ),
-                            in: max(10, safeStartTime + 10)...safeMaxDuration,
-                            step: 1
-                        )
-                        .accentColor(.blue)
-                    }
+                } maximumValueLabel: {
+                    Text(formatTime(importManager.maxDuration))
+                        .font(.caption)
                 }
             }
+            
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Duration:")
+                        .fontWeight(.medium)
+                    Spacer()
+                    Text(formatTime(importManager.selectedEndTime - importManager.selectedStartTime))
+                        .fontWeight(.bold)
+                        .foregroundColor(.green)
+                }
+                
+                Text("Recommended: 30-60 seconds for best performance")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, 8)
         }
-        .padding(20)
+        .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -421,22 +488,6 @@ struct YouTubeImportView: View {
                 )
         )
         .transition(.opacity.combined(with: .move(edge: .bottom)))
-    }
-    
-    // MARK: - Safe computed properties to prevent SwiftUI bugs
-    
-    private var safeMaxDuration: Double {
-        max(30, importManager.maxDuration.rounded())
-    }
-    
-    private var safeStartTime: Double {
-        max(0, min(importManager.selectedStartTime.rounded(), safeMaxDuration - 10))
-    }
-    
-    private var safeEndTime: Double {
-        let minEnd = safeStartTime + 10
-        let maxEnd = safeMaxDuration
-        return max(minEnd, min(importManager.selectedEndTime.rounded(), maxEnd))
     }
     
     // MARK: - Processing Section
@@ -452,17 +503,28 @@ struct YouTubeImportView: View {
                     .fontWeight(.medium)
                 
                 Spacer()
-                
-                Text("\(Int(processingProgress * 100))%")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
             }
             
-            ProgressView(value: processingProgress)
-                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+            VStack(spacing: 8) {
+                ProgressView(value: processingProgress)
+                    .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                    .scaleEffect(y: 1.5)
+                
+                HStack {
+                    Text("Processing video...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Text("\(Int(processingProgress * 100))%")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                }
+            }
         }
-        .padding(20)
+        .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -477,42 +539,112 @@ struct YouTubeImportView: View {
     // MARK: - Action Buttons Section
     
     private var actionButtonsSection: some View {
-        HStack(spacing: 16) {
-            if importManager.downloadedVideoURL != nil && !isProcessing {
-                Button("Process & Use Video") {
-                    processVideo()
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    LinearGradient(
-                        colors: [.green, .blue],
-                        startPoint: .leading,
-                        endPoint: .trailing
+        VStack(spacing: 16) {
+            HStack(spacing: 16) {
+                if showingTimeSelector {
+                    Button("Process Video") {
+                        processVideo()
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        LinearGradient(
+                            colors: [.green, .blue],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .shadow(color: .green.opacity(0.3), radius: 8)
-                .buttonStyle(PlainButtonStyle())
-                .disabled(isProcessing)
-                
-                Button("Start Over") {
-                    resetImport()
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .disabled(isProcessing)
                 }
-                .font(.headline)
-                .foregroundColor(.red)
-                .frame(width: 120)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(.red, lineWidth: 2)
-                )
-                .buttonStyle(PlainButtonStyle())
-                .disabled(isProcessing)
+                
+                if importManager.downloadedVideoURL != nil {
+                    Button("Start Over") {
+                        resetImport()
+                    }
+                    .font(.headline)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(.red, lineWidth: 2)
+                    )
+                    .disabled(isProcessing)
+                }
+            }
+            
+            // Debug Information Panel
+            debugInfoPanel
+        }
+    }
+    
+    // MARK: - Debug Info Panel
+    
+    private var debugInfoPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.blue)
+                Text("Debug Information")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Temp Directory:")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                
+                Text(importManager.tempDirectory.path)
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .textSelection(.enabled)
+                
+                if let videoURL = importManager.downloadedVideoURL {
+                    Text("Downloaded Video:")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+                    
+                    Text(videoURL.path)
+                        .font(.caption)
+                        .foregroundColor(.green)
+                        .textSelection(.enabled)
+                }
+                
+                let deps = importManager.checkDependencies()
+                HStack {
+                    Text("Dependencies:")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                    
+                    Text("yt-dlp: \(deps.ytdlp ? "✅" : "❌")")
+                        .font(.caption)
+                        .foregroundColor(deps.ytdlp ? .green : .red)
+                    
+                    Text("ffmpeg: \(deps.ffmpeg ? "✅" : "❌")")
+                        .font(.caption)
+                        .foregroundColor(deps.ffmpeg ? .green : .red)
+                }
+                .padding(.top, 4)
             }
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.gray.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.gray.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
     
     // MARK: - Private Methods
@@ -533,6 +665,9 @@ struct YouTubeImportView: View {
                 let info = try await importManager.getVideoInfo(from: youtubeURL)
                 await MainActor.run {
                     importManager.videoInfo = info
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        showingVideoInfo = true
+                    }
                     print("✅ Video info loaded: \(info.title)")
                 }
             } catch {
@@ -540,8 +675,6 @@ struct YouTubeImportView: View {
                     print("❌ Failed to fetch video info: \(error)")
                     if let ytError = error as? YouTubeError {
                         print("   YouTube Error: \(ytError.errorDescription ?? "Unknown")")
-                        dependencyMessage = ytError.errorDescription ?? "Failed to get video info"
-                        showingDependencyAlert = true
                     }
                 }
             }
@@ -555,22 +688,24 @@ struct YouTubeImportView: View {
             do {
                 let videoURL = try await importManager.downloadVideo(from: youtubeURL) { progress, message in
                     DispatchQueue.main.async {
-                        importManager.downloadProgress = progress
+                        processingProgress = progress
+                        processingMessage = message
                         print("📊 Download progress: \(Int(progress * 100))% - \(message)")
                     }
                 }
                 
                 await MainActor.run {
                     print("✅ Download completed: \(videoURL.path)")
-                    // Initialize time selector with reasonable defaults
-                    importManager.selectedStartTime = 0.0
-                    importManager.selectedEndTime = min(30.0, importManager.maxDuration)
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        showingVideoInfo = false
+                    }
                 }
             } catch {
                 await MainActor.run {
                     print("❌ Download failed: \(error)")
                     if let ytError = error as? YouTubeError {
                         print("   YouTube Error: \(ytError.errorDescription ?? "Unknown")")
+                        // Show error to user
                         dependencyMessage = ytError.errorDescription ?? "Download failed"
                         showingDependencyAlert = true
                     }
@@ -585,13 +720,9 @@ struct YouTubeImportView: View {
             return
         }
         
-        // Use safe values to prevent bounds errors
-        let startTime = safeStartTime
-        let endTime = safeEndTime
-        
         print("⚙️ User initiated video processing")
         print("   📁 Input: \(inputURL.path)")
-        print("   ⏰ Range: \(startTime)s - \(endTime)s")
+        print("   ⏰ Range: \(importManager.selectedStartTime)s - \(importManager.selectedEndTime)s")
         
         isProcessing = true
         processingProgress = 0.0
@@ -606,8 +737,8 @@ struct YouTubeImportView: View {
             do {
                 try await importManager.trimVideo(
                     inputURL: inputURL,
-                    startTime: startTime,
-                    endTime: endTime,
+                    startTime: importManager.selectedStartTime,
+                    endTime: importManager.selectedEndTime,
                     outputPath: outputURL
                 )
                 
@@ -633,6 +764,8 @@ struct YouTubeImportView: View {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             importManager.cleanup()
             youtubeURL = ""
+            showingVideoInfo = false
+            showingTimeSelector = false
             isProcessing = false
             processingProgress = 0.0
             processingMessage = ""
@@ -651,6 +784,51 @@ struct YouTubeImportView: View {
         let minutes = Int(seconds) / 60
         let remainingSeconds = Int(seconds) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+// MARK: - Status Components
+
+struct StatusStep: View {
+    let icon: String
+    let title: String
+    let isCompleted: Bool
+    let isCurrent: Bool
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(
+                    isCompleted ? .green :
+                    isCurrent ? .blue : .gray
+                )
+                .frame(width: 32, height: 32)
+                .background(
+                    Circle()
+                        .fill(
+                            isCompleted ? .green.opacity(0.2) :
+                            isCurrent ? .blue.opacity(0.2) : .gray.opacity(0.1)
+                        )
+                )
+            
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(
+                    isCompleted ? .green :
+                    isCurrent ? .blue : .gray
+                )
+        }
+    }
+}
+
+struct StatusConnector: View {
+    var body: some View {
+        Rectangle()
+            .fill(.gray.opacity(0.3))
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
     }
 }
 
