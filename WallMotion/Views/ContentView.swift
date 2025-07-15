@@ -10,6 +10,11 @@ import AVKit
 import Foundation
 import Combine
 
+enum MainViewType {
+    case welcome
+    case youtubeImport
+}
+
 struct ContentView: View {
     @StateObject private var wallpaperManager = WallpaperManager()
     @StateObject private var authManager = AuthenticationManager.shared
@@ -26,6 +31,7 @@ struct ContentView: View {
     @State private var showingCategories = true
     @State private var showingLoginSheet = false
     @State private var isPerformingInitialAuth = true
+    @State private var currentView: MainViewType = .welcome
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -38,7 +44,7 @@ struct ContentView: View {
                 // Main app interface
                 mainAppView
             } else {
-                // Authentication required
+                // License required
                 noLicenseView
             }
         }
@@ -47,7 +53,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingLoginSheet) {
             LoginView()
-                .interactiveDismissDisabled(false) // Allow dismissing by clicking outside
+                .interactiveDismissDisabled(false)
         }
     }
     
@@ -82,7 +88,7 @@ struct ContentView: View {
         .background(backgroundGradient)
     }
     
-    // MARK: - Authentication Required View
+    // MARK: - No License View
     
     private var noLicenseView: some View {
         VStack(spacing: 30) {
@@ -192,7 +198,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundGradient)
     }
-
     
     // MARK: - Main App View
     
@@ -242,6 +247,101 @@ struct ContentView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - Main Content View
+    
+    private var mainContentView: some View {
+        Group {
+            switch currentView {
+            case .welcome:
+                welcomeView
+            case .youtubeImport:
+                YouTubeImportView { videoURL in
+                    selectedYouTubeVideo = videoURL
+                    selectedVideoURL = nil
+                    selectedLibraryVideo = nil
+                    statusMessage = "YouTube video ready: \(videoURL.lastPathComponent)"
+                    currentView = .welcome
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    // MARK: - Welcome View
+    
+    private var welcomeView: some View {
+        VStack(spacing: 40) {
+            // Header with icon and title
+            VStack(spacing: 20) {
+                Image(systemName: "plus.rectangle.on.rectangle")
+                    .font(.system(size: 80, weight: .ultraLight))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                VStack(spacing: 12) {
+                    Text("Welcome to WallMotion")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Choose a video file or import from YouTube to create your custom live wallpaper.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
+                
+                HStack(spacing: 20) {
+                    Button("Choose Video File") {
+                        showingFilePicker = true
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    
+                    Button("Import from YouTube") {
+                        currentView = .youtubeImport
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+            
+            // Show selected video preview if available
+            if let videoURL = selectedVideoURL {
+                VideoPreviewCard(
+                    videoURL: videoURL,
+                    isProcessing: isProcessing,
+                    progress: progress
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                
+                if !isProcessing {
+                    Button("Set as Wallpaper") {
+                        replaceWallpaper(with: videoURL)
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                }
+            } else if let youtubeURL = selectedYouTubeVideo {
+                VideoPreviewCard(
+                    videoURL: youtubeURL,
+                    isProcessing: isProcessing,
+                    progress: progress
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                
+                if !isProcessing {
+                    Button("Set as Wallpaper") {
+                        replaceWallpaper(with: youtubeURL)
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Background Gradient
@@ -410,8 +510,7 @@ struct ContentView: View {
             .padding(.horizontal)
             
             Button(action: {
-                // TODO: Implement YouTube import
-                print("YouTube import tapped")
+                currentView = .youtubeImport
             }) {
                 HStack {
                     Image(systemName: "play.rectangle.on.rectangle.fill")
@@ -532,102 +631,25 @@ struct ContentView: View {
                             .foregroundColor(deviceManager.isRegistered ? .green : .orange)
                         
                         Spacer()
-                    }
-                    
-                    HStack {
-                        Image(systemName: "key.fill")
-                            .foregroundColor(.purple)
-                            .font(.caption2)
                         
-                        Text("License: \(user.licenseType)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
+                        if let licensesCount = user.licensesCount {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "key.fill")
+                                        .foregroundColor(.purple)
+                                        .font(.caption2)
+                                    
+                                    Text("License: \(user.licenseType.uppercased())")
+                                        .font(.caption2)
+                                        .fontWeight(.medium)
+                                }
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 12)
             }
         }
-    }
-    
-    // MARK: - Main Content View
-    
-    private var mainContentView: some View {
-        VStack(spacing: 0) {
-            if let videoURL = selectedVideoURL {
-                customVideoView(videoURL)
-            } else if let youtubeURL = selectedYouTubeVideo {
-                youtubeVideoView(youtubeURL)
-            } else {
-                emptyStateView
-            }
-        }
-    }
-    
-    private func customVideoView(_ videoURL: URL) -> some View {
-        VStack(spacing: 20) {
-            VideoPreviewCard(videoURL: videoURL, isProcessing: isProcessing, progress: progress)
-            
-            if !isProcessing {
-                Button("Set as Wallpaper") {
-                    replaceWallpaper(with: videoURL)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-            }
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    
-    private func youtubeVideoView(_ videoURL: URL) -> some View {
-        VStack(spacing: 20) {
-            VideoPreviewCard(videoURL: videoURL, isProcessing: isProcessing, progress: progress)
-            
-            if !isProcessing {
-                Button("Set as Wallpaper") {
-                    replaceWallpaper(with: videoURL)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-            }
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    
-    private var emptyStateView: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "video.badge.plus")
-                .font(.system(size: 80))
-                .foregroundColor(.blue.opacity(0.7))
-            
-            VStack(spacing: 12) {
-                Text("Welcome to WallMotion")
-                    .font(.title)
-                    .fontWeight(.semibold)
-                
-                Text("Choose a video file or import from YouTube to create your custom live wallpaper.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-            
-            HStack(spacing: 20) {
-                Button("Choose Video File") {
-                    showingFilePicker = true
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                
-                Button("Import from YouTube") {
-                    // TODO: Implement YouTube import
-                    print("YouTube import tapped")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     // MARK: - Methods
@@ -762,3 +784,5 @@ struct VideoPreviewCard: View {
         return nil
     }
 }
+
+
