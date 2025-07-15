@@ -1,10 +1,3 @@
-//
-//  YouTubeImportManager.swift
-//  WallMotion
-//
-//  YouTube video import and processing manager
-//
-
 import Foundation
 import AVKit
 import Combine
@@ -65,9 +58,14 @@ class YouTubeImportManager: ObservableObject {
         return try await withCheckedThrowingContinuation { continuation in
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlpPath)
+            
+            // Používáme separátní print příkazy pro každou informaci
             task.arguments = [
-                "--print", "title,duration,thumbnail,height",
+                "--print", "%(title)s",
+                "--print", "%(duration)s",
+                "--print", "%(thumbnail)s",
                 "--no-download",
+                "--no-warnings",
                 urlString
             ]
             
@@ -87,30 +85,61 @@ class YouTubeImportManager: ObservableObject {
                 if task.terminationStatus == 0 {
                     let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
                     let output = String(data: data, encoding: .utf8) ?? ""
-                    print("📄 Raw output: '\(output)'")
+                    print("📄 Raw output lines:")
                     
-                    let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
-                    print("📝 Parsed lines: \(lines)")
+                    // Parse line by line
+                    let lines = output.components(separatedBy: .newlines)
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
                     
-                    if lines.count >= 4 {
-                        let info = YouTubeVideoInfo(
-                            title: lines[0],
-                            duration: Double(lines[1]) ?? 0,
-                            thumbnail: lines[2],
-                            quality: "\(lines[3])p",
-                            url: urlString
-                        )
-                        print("✅ Video info parsed successfully: \(info.title)")
-                        continuation.resume(returning: info)
-                    } else {
-                        print("❌ Invalid video info - expected 4 lines, got \(lines.count)")
-                        continuation.resume(throwing: YouTubeError.invalidVideoInfo)
+                    print("📋 Parsed \(lines.count) lines: \(lines)")
+                    
+                    var title = "Unknown Title"
+                    var duration: Double = 0.0
+                    var thumbnail = ""
+                    
+                    // Parse individual lines
+                    if lines.count >= 1 {
+                        title = lines[0]
+                        print("   📝 Title: '\(title)'")
                     }
+                    
+                    if lines.count >= 2 {
+                        let durationStr = lines[1]
+                        if let durationValue = Double(durationStr) {
+                            duration = durationValue
+                        }
+                        print("   ⏱️ Duration: '\(durationStr)' -> \(duration)s")
+                    }
+                    
+                    if lines.count >= 3 {
+                        thumbnail = lines[2]
+                        print("   🖼️ Thumbnail: '\(thumbnail)'")
+                    }
+                    
+                    // Pro určení kvality, spustíme rychlý test formátů
+                    let quality = "Video available" // Defaultní hodnota - detailnější kontrola by vyžadovala další yt-dlp call
+                    
+                    let videoInfo = YouTubeVideoInfo(
+                        title: title,
+                        duration: duration,
+                        thumbnail: thumbnail,
+                        quality: quality,
+                        url: urlString
+                    )
+                    
+                    print("✅ Video info parsed successfully:")
+                    print("   📝 Final Title: \(title)")
+                    print("   ⏱️ Final Duration: \(duration)s")
+                    print("   🎬 Quality: \(quality)")
+                    
+                    continuation.resume(returning: videoInfo)
+                    
                 } else {
                     let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
                     let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
                     print("❌ Info retrieval failed: \(errorString)")
-                    continuation.resume(throwing: YouTubeError.downloadFailed)
+                    continuation.resume(throwing: YouTubeError.invalidVideoInfo)
                 }
             } catch {
                 print("❌ Failed to start info process: \(error)")
@@ -145,14 +174,21 @@ class YouTubeImportManager: ObservableObject {
         return try await withCheckedThrowingContinuation { continuation in
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlpPath)
+            
+            // Optimalizované argumenty bez FFmpeg závislých funkcí
             task.arguments = [
-                "-f", "bestvideo+bestaudio/best",
+                // Format selector s podporou až 4K (2160p) + fallbacky
+                "-f", "best[ext=mp4][height>=1080]/best[ext=mp4][height>=720]/best[ext=mp4]/bestvideo[height>=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height>=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height>=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
+
+                
                 "--merge-output-format", "mp4",
                 "-o", outputTemplate,
+                "--no-playlist",
                 "--newline",
-                "--verbose",
+                "--no-warnings",
                 urlString
             ]
+
             
             print("🚀 Executing command: \(ytdlpPath) \(task.arguments!.joined(separator: " "))")
             
@@ -209,8 +245,18 @@ class YouTubeImportManager: ObservableObject {
                             
                             if let fileURL = downloadedFile {
                                 print("✅ Found downloaded file: \(fileURL.path)")
-                                self.downloadedVideoURL = fileURL
-                                continuation.resume(returning: fileURL)
+                                
+                                // Základní verifikace souboru bez FFmpeg
+                                self.verifyVideoFileBasic(at: fileURL) { isValid in
+                                    if isValid {
+                                        print("✅ Video file verification passed")
+                                        self.downloadedVideoURL = fileURL
+                                        continuation.resume(returning: fileURL)
+                                    } else {
+                                        print("❌ Downloaded file is not valid")
+                                        continuation.resume(throwing: YouTubeError.downloadFailed)
+                                    }
+                                }
                             } else {
                                 print("❌ Downloaded file not found!")
                                 print("📁 Temp directory contents:")
@@ -219,6 +265,26 @@ class YouTubeImportManager: ObservableObject {
                             }
                         } else {
                             print("❌ Download failed with exit code: \(task.terminationStatus)")
+                            
+                            // Analyzuj chyby pro lepší diagnostiku
+                            if allErrors.contains("ffmpeg not found") {
+                                print("💡 FFmpeg not found - this is expected and OK")
+                                print("💡 Checking if video file was still downloaded...")
+                                
+                                // I přes FFmpeg chybu se soubor mohl stáhnout
+                                let downloadedFile = self.findDownloadedFile(baseFilename: baseFilename, inDirectory: self.tempDirectory)
+                                if let fileURL = downloadedFile {
+                                    print("✅ Video file was downloaded despite FFmpeg error!")
+                                    self.downloadedVideoURL = fileURL
+                                    continuation.resume(returning: fileURL)
+                                    return
+                                }
+                            }
+                            
+                            if allErrors.contains("audio only") || allErrors.contains("no video") {
+                                print("💡 Detected audio-only issue - trying fallback format")
+                            }
+                            
                             continuation.resume(throwing: YouTubeError.downloadFailed)
                         }
                     }
@@ -260,14 +326,11 @@ class YouTubeImportManager: ObservableObject {
             task.executableURL = URL(fileURLWithPath: ffmpegPath)
             task.arguments = [
                 "-i", inputURL.path,
-                "-ss", String(format: "%.2f", startTime),
-                "-t", String(format: "%.2f", duration),
-                "-c:v", "libx264",
-                "-c:a", "aac",
-                "-preset", "fast",
-                "-crf", "20",
-                "-movflags", "+faststart",
-                "-y", // Overwrite output file
+                "-ss", String(startTime),
+                "-t", String(duration),
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                "-y",
                 outputPath.path
             ]
             
@@ -278,63 +341,35 @@ class YouTubeImportManager: ObservableObject {
             task.standardOutput = outputPipe
             task.standardError = errorPipe
             
-            var allOutput = ""
-            var allErrors = ""
-            
-            // Monitor output
-            outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allOutput += output
-                    print("📥 FFmpeg stdout: \(output)")
-                }
-            }
-            
-            errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allErrors += output
-                    print("🔍 FFmpeg stderr: \(output)")
-                }
-            }
-            
             do {
                 try task.run()
+                task.waitUntilExit()
                 
-                task.terminationHandler = { _ in
-                    outputPipe.fileHandleForReading.readabilityHandler = nil
-                    errorPipe.fileHandleForReading.readabilityHandler = nil
-                    
-                    print("🏁 FFmpeg finished with status: \(task.terminationStatus)")
-                    print("📄 Full output: \(allOutput)")
-                    print("❗ Full errors: \(allErrors)")
-                    
-                    if task.terminationStatus == 0 {
-                        // Verify output file was created
-                        if FileManager.default.fileExists(atPath: outputPath.path) {
-                            do {
-                                let attributes = try FileManager.default.attributesOfItem(atPath: outputPath.path)
-                                if let fileSize = attributes[.size] as? Int64 {
-                                    print("✅ Trimmed video created: \(outputPath.path) (\(fileSize) bytes)")
-                                    continuation.resume()
-                                } else {
-                                    print("❌ Output file has no size information")
-                                    continuation.resume(throwing: YouTubeError.processingFailed)
-                                }
-                            } catch {
-                                print("❌ Error checking output file: \(error)")
+                print("🏁 FFmpeg finished with status: \(task.terminationStatus)")
+                
+                if task.terminationStatus == 0 {
+                    // Verify output file was created and has content
+                    if FileManager.default.fileExists(atPath: outputPath.path) {
+                        do {
+                            let attributes = try FileManager.default.attributesOfItem(atPath: outputPath.path)
+                            if let fileSize = attributes[.size] as? Int64 {
+                                print("✅ Trimmed video created: \(outputPath.path) (\(fileSize) bytes)")
+                                continuation.resume()
+                            } else {
+                                print("❌ Output file has no size information")
                                 continuation.resume(throwing: YouTubeError.processingFailed)
                             }
-                        } else {
-                            print("❌ Output file was not created")
+                        } catch {
+                            print("❌ Error checking output file: \(error)")
                             continuation.resume(throwing: YouTubeError.processingFailed)
                         }
                     } else {
-                        print("❌ FFmpeg failed with exit code: \(task.terminationStatus)")
+                        print("❌ Output file was not created")
                         continuation.resume(throwing: YouTubeError.processingFailed)
                     }
+                } else {
+                    print("❌ FFmpeg failed with exit code: \(task.terminationStatus)")
+                    continuation.resume(throwing: YouTubeError.processingFailed)
                 }
             } catch {
                 print("❌ Failed to start FFmpeg process: \(error)")
@@ -412,6 +447,133 @@ class YouTubeImportManager: ObservableObject {
         return nil
     }
     
+    // MARK: - Basic Video File Verification (without FFmpeg)
+    
+    private func verifyVideoFileBasic(at url: URL, completion: @escaping (Bool) -> Void) {
+        print("🔍 Basic verification of video file: \(url.path)")
+        
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            if let fileSize = attributes[.size] as? Int64 {
+                print("📏 File size: \(fileSize) bytes")
+                
+                // Základní kontroly:
+                // 1. Soubor musí existovat a mít nenulovou velikost
+                guard fileSize > 0 else {
+                    print("❌ File is empty")
+                    completion(false)
+                    return
+                }
+                
+                // 2. Musí být větší než 100KB (velmi malé soubory jsou pravděpodobně chybové)
+                guard fileSize > 100_000 else {
+                    print("❌ File too small (\(fileSize) bytes) - likely error file")
+                    completion(false)
+                    return
+                }
+                
+                // 3. Kontrola přípony souboru
+                let fileExtension = url.pathExtension.lowercased()
+                let validExtensions = ["mp4", "webm", "mkv", "avi", "mov"]
+                
+                guard validExtensions.contains(fileExtension) else {
+                    print("❌ Invalid file extension: .\(fileExtension)")
+                    completion(false)
+                    return
+                }
+                
+                print("✅ Basic verification passed:")
+                print("   📏 Size: \(fileSize) bytes (\(String(format: "%.2f", Double(fileSize) / 1_000_000)) MB)")
+                print("   📄 Extension: .\(fileExtension)")
+                
+                completion(true)
+                
+            } else {
+                print("❌ Could not get file size")
+                completion(false)
+            }
+        } catch {
+            print("❌ Error checking file attributes: \(error)")
+            completion(false)
+        }
+    }
+    
+    // MARK: - Video File Verification (with FFmpeg - original method)
+    
+    private func verifyVideoFile(at url: URL, completion: @escaping (Bool) -> Void) {
+        print("🔍 Verifying video file: \(url.path)")
+        
+        // Kontrola pomocí ffprobe (pokud je dostupný)
+        let ffprobePaths = ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"]
+        guard let ffprobePath = ffprobePaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            print("⚠️ ffprobe not found, skipping detailed verification")
+            // Základní kontrola velikosti souboru
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                if let fileSize = attributes[.size] as? Int64 {
+                    print("📏 File size: \(fileSize) bytes")
+                    // Pokud je soubor větší než 1MB, pravděpodobně obsahuje video
+                    completion(fileSize > 1_000_000)
+                    return
+                }
+            } catch {
+                print("❌ Error checking file attributes: \(error)")
+            }
+            completion(false)
+            return
+        }
+        
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: ffprobePath)
+        task.arguments = [
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            url.path
+        ]
+        
+        let outputPipe = Pipe()
+        task.standardOutput = outputPipe
+        task.standardError = Pipe()
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            if task.terminationStatus == 0 {
+                let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8),
+                   let jsonData = output.data(using: .utf8) {
+                    
+                    do {
+                        if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                           let streams = json["streams"] as? [[String: Any]] {
+                            
+                            let hasVideo = streams.contains { stream in
+                                (stream["codec_type"] as? String) == "video"
+                            }
+                            
+                            let hasAudio = streams.contains { stream in
+                                (stream["codec_type"] as? String) == "audio"
+                            }
+                            
+                            print("📊 File analysis: Video streams: \(hasVideo), Audio streams: \(hasAudio)")
+                            completion(hasVideo) // Soubor musí obsahovat video stream
+                            return
+                        }
+                    } catch {
+                        print("❌ Error parsing ffprobe output: \(error)")
+                    }
+                }
+            }
+        } catch {
+            print("❌ Error running ffprobe: \(error)")
+        }
+        
+        // Fallback na základní kontrolu
+        completion(true)
+    }
+    
     private func listDirectoryContents(_ directory: URL) {
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
@@ -478,11 +640,15 @@ enum YouTubeError: LocalizedError {
 
 extension YouTubeImportManager {
     func checkDependencies() -> (ytdlp: Bool, ffmpeg: Bool) {
-        let ytdlpExists = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/yt-dlp") ||
-                         FileManager.default.fileExists(atPath: "/usr/local/bin/yt-dlp")
+        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
+        let ytdlpExists = ytdlpPaths.contains { FileManager.default.fileExists(atPath: $0) }
         
-        let ffmpegExists = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/ffmpeg") ||
-                          FileManager.default.fileExists(atPath: "/usr/local/bin/ffmpeg")
+        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
+        let ffmpegExists = ffmpegPaths.contains { FileManager.default.fileExists(atPath: $0) }
+        
+        print("🔍 Dependency check:")
+        print("   yt-dlp: \(ytdlpExists ? "✅" : "❌") (checked: \(ytdlpPaths))")
+        print("   ffmpeg: \(ffmpegExists ? "✅" : "❌") (checked: \(ffmpegPaths))")
         
         return (ytdlp: ytdlpExists, ffmpeg: ffmpegExists)
     }
@@ -500,9 +666,20 @@ extension YouTubeImportManager {
         }
         
         if instructions.isEmpty {
-            return "All dependencies are installed!"
+            return "All dependencies are installed! ✅"
         } else {
-            return "Please install missing dependencies:\n\n" + instructions.joined(separator: "\n")
+            var message = "Please install missing dependencies:\n\n"
+            message += instructions.joined(separator: "\n")
+            
+            if !deps.ffmpeg {
+                message += "\n\nNote: FFmpeg is optional but recommended for:"
+                message += "\n• Thumbnail conversion"
+                message += "\n• Metadata embedding"
+                message += "\n• Advanced video processing"
+                message += "\n\nBasic video download will work without FFmpeg."
+            }
+            
+            return message
         }
     }
 }
