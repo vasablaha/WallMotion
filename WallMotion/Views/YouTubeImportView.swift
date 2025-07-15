@@ -429,7 +429,7 @@ struct YouTubeImportView: View {
                     Text(formatTime(importManager.maxDuration - 10))
                         .font(.caption)
                 }
-                .onChange(of: importManager.selectedStartTime) { newValue in
+                .onChange(of: importManager.selectedStartTime) { _, newValue in
                     if importManager.selectedEndTime <= newValue + 5 {
                         importManager.selectedEndTime = min(newValue + 30, importManager.maxDuration)
                     }

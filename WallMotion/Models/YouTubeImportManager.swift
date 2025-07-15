@@ -175,20 +175,29 @@ class YouTubeImportManager: ObservableObject {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlpPath)
             
-            // Optimalizované argumenty bez FFmpeg závislých funkcí
+            // Opravené argumenty - jen video v nejlepší kvalitě bez zvuku
             task.arguments = [
-                // Format selector s podporou až 4K (2160p) + fallbacky
-                "-f", "best[ext=mp4][height>=1080]/best[ext=mp4][height>=720]/best[ext=mp4]/bestvideo[height>=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height>=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height>=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
-
+                // Stáhnout jen video v nejlepší kvalitě (bez zvuku)
+                "-f", "bestvideo[ext=mp4][height<=2160]/bestvideo[height<=2160]/bestvideo[ext=mp4]/bestvideo",
                 
+                // Output format
                 "--merge-output-format", "mp4",
                 "-o", outputTemplate,
+                
+                // Žádný zvuk - wallpaper ho nepotřebuje
+                "--no-audio",
+                
+                // Ostatní nastavení
                 "--no-playlist",
                 "--newline",
                 "--no-warnings",
+                
+                // Přidat retry a timeout pro stabilitu
+                "--retries", "3",
+                "--socket-timeout", "30",
+                
                 urlString
             ]
-
             
             print("🚀 Executing command: \(ytdlpPath) \(task.arguments!.joined(separator: " "))")
             
@@ -321,7 +330,17 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.fileNotFound
         }
         
-        return try await withCheckedThrowingContinuation { continuation in
+        // Try stream copy first (faster), then fallback to re-encoding
+        let success = await tryStreamCopy(ffmpegPath: ffmpegPath, inputURL: inputURL, startTime: startTime, duration: duration, outputPath: outputPath)
+        
+        if !success {
+            print("⚠️ Stream copy failed, trying re-encoding...")
+            try await tryReEncoding(ffmpegPath: ffmpegPath, inputURL: inputURL, startTime: startTime, duration: duration, outputPath: outputPath)
+        }
+    }
+    
+    private func tryStreamCopy(ffmpegPath: String, inputURL: URL, startTime: Double, duration: Double, outputPath: URL) async -> Bool {
+        return await withCheckedContinuation { continuation in
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ffmpegPath)
             task.arguments = [
@@ -334,7 +353,7 @@ class YouTubeImportManager: ObservableObject {
                 outputPath.path
             ]
             
-            print("🚀 Executing: \(ffmpegPath) \(task.arguments!.joined(separator: " "))")
+            print("🚀 Trying stream copy: \(ffmpegPath) \(task.arguments!.joined(separator: " "))")
             
             let outputPipe = Pipe()
             let errorPipe = Pipe()
@@ -345,34 +364,117 @@ class YouTubeImportManager: ObservableObject {
                 try task.run()
                 task.waitUntilExit()
                 
-                print("🏁 FFmpeg finished with status: \(task.terminationStatus)")
+                print("🏁 Stream copy finished with status: \(task.terminationStatus)")
                 
                 if task.terminationStatus == 0 {
                     // Verify output file was created and has content
                     if FileManager.default.fileExists(atPath: outputPath.path) {
                         do {
                             let attributes = try FileManager.default.attributesOfItem(atPath: outputPath.path)
-                            if let fileSize = attributes[.size] as? Int64 {
-                                print("✅ Trimmed video created: \(outputPath.path) (\(fileSize) bytes)")
-                                continuation.resume()
-                            } else {
-                                print("❌ Output file has no size information")
-                                continuation.resume(throwing: YouTubeError.processingFailed)
+                            if let fileSize = attributes[.size] as? Int64, fileSize > 0 {
+                                print("✅ Stream copy successful: \(outputPath.path) (\(fileSize) bytes)")
+                                continuation.resume(returning: true)
+                                return
                             }
                         } catch {
                             print("❌ Error checking output file: \(error)")
+                        }
+                    }
+                }
+                
+                // Log error output for debugging
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorString = String(data: errorData, encoding: .utf8) ?? ""
+                print("⚠️ Stream copy failed (exit \(task.terminationStatus)): \(errorString)")
+                
+                continuation.resume(returning: false)
+                
+            } catch {
+                print("❌ Failed to start stream copy process: \(error)")
+                continuation.resume(returning: false)
+            }
+        }
+    }
+    
+    private func tryReEncoding(ffmpegPath: String, inputURL: URL, startTime: Double, duration: Double, outputPath: URL) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: ffmpegPath)
+            
+            // Re-encoding with H.264 - compatible with macOS wallpapers
+            task.arguments = [
+                "-i", inputURL.path,
+                "-ss", String(startTime),
+                "-t", String(duration),
+                "-c:v", "libx264",              // H.264 video codec
+                "-preset", "medium",            // Balans mezi rychlostí a kvalitou
+                "-crf", "23",                   // Kvalita (18-28, nižší = lepší)
+                "-pix_fmt", "yuv420p",          // Pixel format kompatibilní s QuickTime
+                "-movflags", "+faststart",      // Optimalizace pro streaming
+                "-an",                          // Žádný zvuk
+                "-avoid_negative_ts", "make_zero",
+                "-y",
+                outputPath.path
+            ]
+            
+            print("🚀 Re-encoding: \(ffmpegPath) \(task.arguments!.joined(separator: " "))")
+            
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            task.standardOutput = outputPipe
+            task.standardError = errorPipe
+            
+            // Monitor progress
+            var allOutput = ""
+            var allErrors = ""
+            
+            errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty {
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    allErrors += output
+                    print("🔍 FFmpeg: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+                }
+            }
+            
+            do {
+                try task.run()
+                
+                task.terminationHandler = { _ in
+                    errorPipe.fileHandleForReading.readabilityHandler = nil
+                    
+                    DispatchQueue.main.async {
+                        print("🏁 Re-encoding finished with status: \(task.terminationStatus)")
+                        
+                        if task.terminationStatus == 0 {
+                            // Verify output file was created and has content
+                            if FileManager.default.fileExists(atPath: outputPath.path) {
+                                do {
+                                    let attributes = try FileManager.default.attributesOfItem(atPath: outputPath.path)
+                                    if let fileSize = attributes[.size] as? Int64, fileSize > 0 {
+                                        print("✅ Re-encoding successful: \(outputPath.path) (\(fileSize) bytes)")
+                                        continuation.resume()
+                                        return
+                                    } else {
+                                        print("❌ Re-encoded file is empty")
+                                    }
+                                } catch {
+                                    print("❌ Error checking re-encoded file: \(error)")
+                                }
+                            } else {
+                                print("❌ Re-encoded file was not created")
+                            }
+                            continuation.resume(throwing: YouTubeError.processingFailed)
+                        } else {
+                            print("❌ Re-encoding failed with exit code: \(task.terminationStatus)")
+                            print("📄 Full errors: \(allErrors)")
                             continuation.resume(throwing: YouTubeError.processingFailed)
                         }
-                    } else {
-                        print("❌ Output file was not created")
-                        continuation.resume(throwing: YouTubeError.processingFailed)
                     }
-                } else {
-                    print("❌ FFmpeg failed with exit code: \(task.terminationStatus)")
-                    continuation.resume(throwing: YouTubeError.processingFailed)
                 }
+                
             } catch {
-                print("❌ Failed to start FFmpeg process: \(error)")
+                print("❌ Failed to start re-encoding process: \(error)")
                 continuation.resume(throwing: error)
             }
         }
@@ -496,82 +598,6 @@ class YouTubeImportManager: ObservableObject {
             print("❌ Error checking file attributes: \(error)")
             completion(false)
         }
-    }
-    
-    // MARK: - Video File Verification (with FFmpeg - original method)
-    
-    private func verifyVideoFile(at url: URL, completion: @escaping (Bool) -> Void) {
-        print("🔍 Verifying video file: \(url.path)")
-        
-        // Kontrola pomocí ffprobe (pokud je dostupný)
-        let ffprobePaths = ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"]
-        guard let ffprobePath = ffprobePaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-            print("⚠️ ffprobe not found, skipping detailed verification")
-            // Základní kontrola velikosti souboru
-            do {
-                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-                if let fileSize = attributes[.size] as? Int64 {
-                    print("📏 File size: \(fileSize) bytes")
-                    // Pokud je soubor větší než 1MB, pravděpodobně obsahuje video
-                    completion(fileSize > 1_000_000)
-                    return
-                }
-            } catch {
-                print("❌ Error checking file attributes: \(error)")
-            }
-            completion(false)
-            return
-        }
-        
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: ffprobePath)
-        task.arguments = [
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_streams",
-            url.path
-        ]
-        
-        let outputPipe = Pipe()
-        task.standardOutput = outputPipe
-        task.standardError = Pipe()
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            if task.terminationStatus == 0 {
-                let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                if let output = String(data: data, encoding: .utf8),
-                   let jsonData = output.data(using: .utf8) {
-                    
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let streams = json["streams"] as? [[String: Any]] {
-                            
-                            let hasVideo = streams.contains { stream in
-                                (stream["codec_type"] as? String) == "video"
-                            }
-                            
-                            let hasAudio = streams.contains { stream in
-                                (stream["codec_type"] as? String) == "audio"
-                            }
-                            
-                            print("📊 File analysis: Video streams: \(hasVideo), Audio streams: \(hasAudio)")
-                            completion(hasVideo) // Soubor musí obsahovat video stream
-                            return
-                        }
-                    } catch {
-                        print("❌ Error parsing ffprobe output: \(error)")
-                    }
-                }
-            }
-        } catch {
-            print("❌ Error running ffprobe: \(error)")
-        }
-        
-        // Fallback na základní kontrolu
-        completion(true)
     }
     
     private func listDirectoryContents(_ directory: URL) {
