@@ -39,7 +39,7 @@ struct ContentView: View {
                 mainAppView
             } else {
                 // Authentication required
-                authenticationRequiredView
+                noLicenseView
             }
         }
         .task {
@@ -84,64 +84,115 @@ struct ContentView: View {
     
     // MARK: - Authentication Required View
     
-    private var authenticationRequiredView: some View {
+    private var noLicenseView: some View {
         VStack(spacing: 30) {
             VStack(spacing: 20) {
-                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                Image(systemName: "key.slash")
                     .font(.system(size: 60))
                     .foregroundColor(.orange)
                 
                 VStack(spacing: 12) {
-                    Text("Authentication Required")
+                    Text("License Required")
                         .font(.title)
                         .fontWeight(.bold)
                     
                     if !authManager.isAuthenticated {
                         Text("Please sign in to your WallMotion account to continue using the app.")
-                    } else if !authManager.hasValidLicense {
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    } else {
                         Text("You need a valid license to use WallMotion. Please purchase a license from our website.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
                     }
                 }
-                .multilineTextAlignment(.center)
             }
             
             VStack(spacing: 16) {
                 if !authManager.isAuthenticated {
-                    Button("Sign In") {
+                    // Sign In Button
+                    Button(action: {
                         showingLoginSheet = true
+                    }) {
+                        HStack {
+                            Image(systemName: "person.crop.circle")
+                            Text("Sign In")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryButtonStyle())
+                    
                 } else {
-                    Button("Purchase License") {
-                        if let url = URL(string: "https://wallmotion.eu") {
+                    // Purchase License Button
+                    Button(action: {
+                        if let url = URL(string: "https://wallmotion.eu/") {
                             NSWorkspace.shared.open(url)
                         }
+                    }) {
+                        HStack {
+                            Image(systemName: "cart")
+                            Text("Purchase License")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryButtonStyle())
+                    
+                    // Sign Out Button - pro přihlášení na jiný účet
+                    Button(action: {
+                        authManager.signOut()
+                    }) {
+                        HStack {
+                            Image(systemName: "person.crop.circle.badge.minus")
+                            Text("Sign Out & Use Different Account")
+                                .fontWeight(.medium)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    
+                    // Current user info
+                    if let user = authManager.user {
+                        VStack(spacing: 4) {
+                            Text("Currently signed in as:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Text(user.email)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.secondary.opacity(0.1))
+                                )
+                        }
+                        .padding(.top, 8)
+                    }
                 }
                 
-                Button("Quit App") {
+                // Quit App Button
+                Button(action: {
                     NSApplication.shared.terminate(nil)
+                }) {
+                    Text("Quit App")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(SecondaryButtonStyle())
+                .buttonStyle(PlainButtonStyle())
             }
-            
-            if let error = authManager.authError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.red.opacity(0.1))
-                    )
-            }
+            .frame(maxWidth: 400)
         }
-        .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundGradient)
     }
+
     
     // MARK: - Main App View
     
