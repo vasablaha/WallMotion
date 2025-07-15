@@ -1,9 +1,4 @@
-//
-//  LoginView.swift
-//  WallMotion
-//
-//  Login and authentication screen
-//
+// Aktualizace LoginView.swift s success státem a automatickým zavřením
 
 import SwiftUI
 
@@ -13,16 +8,23 @@ struct LoginView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     
+    @State private var isShowingSuccess = false
+    @State private var countdownTimer: Timer?
+    @State private var secondsRemaining = 10
+    
     var body: some View {
         VStack(spacing: 0) {
-            // Header with close button
-            headerSectionWithClose
-            
-            // Main content
-            mainContentSection
-            
-            // Footer with quit option
-            footerSectionWithQuit
+            if isShowingSuccess {
+                // Success state
+                successView
+            } else {
+                // Normal login state
+                VStack(spacing: 0) {
+                    headerSectionWithClose
+                    mainContentSection
+                    footerSectionWithQuit
+                }
+            }
         }
         .frame(width: 500)
         .frame(minHeight: 480, maxHeight: 650)
@@ -31,6 +33,14 @@ struct LoginView: View {
         .onKeyPress(.escape) {
             dismiss()
             return .handled
+        }
+        .onChange(of: authManager.isAuthenticated) { _, isAuth in
+            if isAuth && authManager.hasValidLicense {
+                showSuccessAndStartCountdown()
+            }
+        }
+        .onDisappear {
+            countdownTimer?.invalidate()
         }
     }
     
@@ -44,9 +54,200 @@ struct LoginView: View {
         )
     }
     
+    // MARK: - Success View
+    
+    private var successView: some View {
+        VStack(spacing: 30) {
+            // Success header
+            VStack(spacing: 20) {
+                // Success icon
+                ZStack {
+                    Circle()
+                        .fill(.green.opacity(0.2))
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.green)
+                }
+                
+                VStack(spacing: 8) {
+                    Text("Sign In Successful!")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.green)
+                    
+                    if let user = authManager.user {
+                        Text("Welcome back, \(user.email)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            // Device info
+            deviceInfoSuccessCard
+            
+            // License info
+            if let user = authManager.user {
+                licenseInfoSuccessCard(user)
+            }
+            
+            // Countdown and close button
+            VStack(spacing: 15) {
+                HStack {
+                    Text("This window will close automatically in \(secondsRemaining) seconds")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Button("Close Now") {
+                        dismiss()
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var deviceInfoSuccessCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "laptopcomputer")
+                    .foregroundColor(.blue)
+                    .font(.title3)
+                Text("Device Information")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+            }
+            
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Name:")
+                        .foregroundColor(.secondary)
+                    Text(deviceManager.getDeviceName())
+                        .fontWeight(.medium)
+                }
+                
+                if let model = deviceManager.getMacModel() {
+                    HStack {
+                        Text("Model:")
+                            .foregroundColor(.secondary)
+                        Text(model)
+                            .fontWeight(.medium)
+                    }
+                }
+                
+                if let macosVersion = deviceManager.getMacOSVersion() {
+                    HStack {
+                        Text("macOS:")
+                            .foregroundColor(.secondary)
+                        Text(macosVersion)
+                            .fontWeight(.medium)
+                    }
+                }
+                
+                HStack {
+                    Text("Status:")
+                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Registered & Active")
+                            .foregroundColor(.green)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            .font(.caption)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.blue.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.blue.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+    
+    private func licenseInfoSuccessCard(_ user: User) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "key.fill")
+                    .foregroundColor(.green)
+                    .font(.title3)
+                Text("License Information")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+            }
+            
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Type:")
+                        .foregroundColor(.secondary)
+                    Text("Lifetime License")
+                        .fontWeight(.medium)
+                        .foregroundColor(.green)
+                }
+                
+                HStack {
+                    Text("Devices:")
+                        .foregroundColor(.secondary)
+                    Text("\(user.licensesCount ?? 0)")
+                        .fontWeight(.medium)
+                }
+                
+                if let purchaseDate = user.purchaseDate {
+                    HStack {
+                        Text("Purchased:")
+                            .foregroundColor(.secondary)
+                        Text(purchaseDate, style: .date)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            .font(.caption)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.green.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.green.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func showSuccessAndStartCountdown() {
+        withAnimation(.easeInOut(duration: 0.5)) {
+            isShowingSuccess = true
+        }
+        
+        // Start countdown
+        secondsRemaining = 10
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if secondsRemaining > 0 {
+                secondsRemaining -= 1
+            } else {
+                countdownTimer?.invalidate()
+                dismiss()
+            }
+        }
+    }
+    
+    // MARK: - Original Login Views (unchanged)
+    
     private var headerSectionWithClose: some View {
         VStack(spacing: 15) {
-            // Close button in top right
             HStack {
                 Spacer()
                 Button(action: {
@@ -68,7 +269,6 @@ struct LoginView: View {
             .padding(.top, 15)
             .padding(.trailing, 20)
             
-            // App icon
             Image(systemName: "desktopcomputer")
                 .font(.system(size: 50, weight: .ultraLight))
                 .foregroundStyle(
@@ -96,19 +296,56 @@ struct LoginView: View {
     
     private var mainContentSection: some View {
         VStack(spacing: 15) {
-            // Device info
             deviceInfoCard
-            
-            // Authentication section
             authenticationSection
             
-            // Error display
             if let error = authManager.authError {
                 errorCard(error)
             }
         }
         .padding(.horizontal, 40)
         .padding(.vertical, 12)
+    }
+    
+    private var footerSectionWithQuit: some View {
+        VStack(spacing: 12) {
+            Button("Quit WallMotion") {
+                NSApplication.shared.terminate(nil)
+            }
+            .foregroundColor(.red)
+            .font(.caption)
+            
+            HStack(spacing: 20) {
+                Button("Support") {
+                    if let url = URL(string: "https://wallmotion.eu/support") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.blue)
+                
+                Button("Privacy") {
+                    if let url = URL(string: "https://wallmotion.eu/privacy") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.blue)
+                
+                Button("Terms") {
+                    if let url = URL(string: "https://wallmotion.eu/terms") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.blue)
+            }
+            
+            Text("© 2025 WallMotion")
+                .font(.caption2)
+                .foregroundColor(.blue)
+        }
+        .padding(.bottom, 20)
     }
     
     private var deviceInfoCard: some View {
@@ -185,38 +422,10 @@ struct LoginView: View {
     
     private var authenticationSection: some View {
         VStack(spacing: 15) {
-            // Single sign in button
-            Button {
-                Task {
-                    await authManager.authenticateWithWeb()
-                }
-            } label: {
-                HStack {
-                    if authManager.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    }
-                    Text(authManager.isLoading ? "Signing In..." : "Sign In with Web Browser")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(authManager.isLoading)
-            
-            VStack(spacing: 6) {
-                Text("Don't have an account?")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                
-                Button("Create Account") {
-                    if let url = URL(string: "https://wallmotion.eu/register") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .font(.caption2)
-                .foregroundColor(.blue)
+            if authManager.isAuthenticated {
+                authenticatedState
+            } else {
+                unauthenticatedState
             }
         }
     }
@@ -252,7 +461,6 @@ struct LoginView: View {
                     )
             )
             
-            // License info
             if let user = authManager.user {
                 licenseInfoCard(user)
             }
@@ -298,12 +506,6 @@ struct LoginView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(authManager.isLoading)
-            .onTapGesture {
-                // Clear any previous errors when user tries again
-                Task { @MainActor in
-                    authManager.authError = nil
-                }
-            }
             
             VStack(spacing: 6) {
                 Text("Don't have an account?")
@@ -414,41 +616,6 @@ struct LoginView: View {
             return error
         }
     }
-    
-    private var footerSectionWithQuit: some View {
-        VStack(spacing: 8) {
-            Text("© 2025 WallMotion")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            HStack(spacing: 15) {
-                Button("Support") {
-                    if let url = URL(string: "https://wallmotion.eu/support") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .font(.caption2)
-                .foregroundColor(.blue)
-                
-                Button("Privacy") {
-                    if let url = URL(string: "https://wallmotion.eu/privacy") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .font(.caption2)
-                .foregroundColor(.blue)
-                
-                Button("Terms") {
-                    if let url = URL(string: "https://wallmotion.eu/terms") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .font(.caption2)
-                .foregroundColor(.blue)
-            }
-        }
-        .padding(.bottom, 15)
-    }
 }
 
 // MARK: - Button Styles
@@ -456,37 +623,34 @@ struct LoginView: View {
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundColor(.white)
             .padding(.vertical, 12)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 20)
             .background(
-                LinearGradient(
-                    colors: [.blue, .purple],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.blue)
             )
-            .cornerRadius(10)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.spring(response: 0.3), value: configuration.isPressed)
+            .foregroundColor(.white)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundColor(.primary)
             .padding(.vertical, 8)
             .padding(.horizontal, 16)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.gray.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(.primary.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.spring(response: 0.3), value: configuration.isPressed)
+            .foregroundColor(.primary)
+            .font(.caption)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }

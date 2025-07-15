@@ -378,14 +378,19 @@ extension AuthenticationManager {
         return keychain.getAuthToken()
     }
     
-    // Check if user has valid license
+    
     var hasValidLicense: Bool {
         guard let user = user else { return false }
         return user.licenseType != "NONE" && (user.licensesCount ?? 0) > 0
     }
-    
+
     // Get license count
     var licenseCount: Int {
         return user?.licensesCount ?? 0
+    }
+
+    // Get license type
+    var licenseType: String {
+        return user?.licenseType ?? "NONE"
     }
 }
