@@ -88,6 +88,39 @@ class NetworkManager: ObservableObject {
         }
     }
     
+    func logoutDevice(fingerprint: String, authToken: String) async throws -> LogoutResponse {
+        guard let url = URL(string: "\(baseURL)/api/devices") else {
+            throw NetworkError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        
+        let body = [
+            "fingerprint": fingerprint,
+            "action": "logout"
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.invalidResponse
+        }
+        
+        if httpResponse.statusCode == 200 {
+            let logoutResponse = try JSONDecoder().decode(LogoutResponse.self, from: data)
+            return logoutResponse
+        } else {
+            let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data)
+            throw NetworkError.serverError(errorResponse?.error ?? "Unknown error")
+        }
+    }
+    
+    
     // MARK: - Authentication Methods
     
     func validateLicense(fingerprint: String, bundleId: String, version: String) async throws -> LicenseValidationResponse {
@@ -280,3 +313,8 @@ struct User: Codable {
         case email, licenseType, purchaseDate, licensesCount, createdAt
     }
 }
+
+    struct LogoutResponse: Codable {
+        let success: Bool
+        let message: String?
+    }

@@ -63,6 +63,8 @@ class AuthenticationManager: ObservableObject {
     
     // MARK: - Web Authentication
     
+    // Jednoduchá aktualizace AuthenticationManager.swift
+
     @MainActor
     func authenticateWithWeb() async {
         isLoading = true
@@ -70,7 +72,7 @@ class AuthenticationManager: ObservableObject {
         
         print("🌐 Starting web authentication...")
         
-        // Open web authentication
+        // Simple auth URL for macOS
         guard let authURL = URL(string: "https://wallmotion.eu/login?app=macos") else {
             self.authError = "Invalid authentication URL"
             isLoading = false
@@ -96,15 +98,13 @@ class AuthenticationManager: ObservableObject {
             return
         }
         
-        // Debug: Check if we have windows
-        print("🪟 Available windows: \(NSApplication.shared.windows.count)")
-        print("🪟 Main window exists: \(NSApplication.shared.mainWindow != nil)")
-        
-        // Set presentation context provider before starting
+        // Set presentation context provider
         session.presentationContextProvider = contextProvider
-        session.prefersEphemeralWebBrowserSession = false
         
-        print("✅ Presentation context provider set")
+        // VŽDY použít ephemeral session pro macOS - žádné cookies!
+        session.prefersEphemeralWebBrowserSession = true
+        
+        print("✅ Using ephemeral session (no cookies)")
         print("🚀 Starting authentication session...")
         
         // Start session
@@ -280,8 +280,16 @@ class AuthenticationManager: ObservableObject {
     func signOut() {
         print("🚪 Signing out...")
         
+        // Odhlásit zařízení na serveru (neodstraňovat!)
+        if let token = keychain.getAuthToken() {
+            Task {
+                await deviceManager.logoutDevice(authToken: token)
+            }
+        }
+        
+        // Lokální cleanup
         keychain.clearAllData()
-        deviceManager.unregisterDevice()
+        deviceManager.unregisterDeviceLocally() // POZOR: jen lokálně!
         
         user = nil
         isAuthenticated = false
@@ -289,6 +297,7 @@ class AuthenticationManager: ObservableObject {
         
         print("✅ Signed out successfully")
     }
+
     
     // MARK: - App Launch Authentication Flow
     

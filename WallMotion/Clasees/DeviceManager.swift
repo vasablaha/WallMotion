@@ -45,6 +45,25 @@ class DeviceManager: ObservableObject {
         return combined.sha256()
     }
     
+    func logoutDevice(authToken: String) async {
+        let fingerprint = generateDeviceFingerprint()
+        
+        do {
+            let response = try await networkManager.logoutDevice(
+                fingerprint: fingerprint,
+                authToken: authToken
+            )
+            
+            if response.success {
+                print("✅ Device logged out on server")
+            } else {
+                print("⚠️ Failed to logout device on server")
+            }
+        } catch {
+            print("⚠️ Error logging out device: \(error)")
+        }
+    }
+    
     private func getSystemUUID() -> String? {
         let platformExpert = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
         defer { IOObjectRelease(platformExpert) }
@@ -237,6 +256,14 @@ class DeviceManager: ObservableObject {
         isRegistered = false
         print("🗑️ Device unregistered locally")
     }
+    func unregisterDeviceLocally() {
+        // POZOR: Pouze lokální cleanup, neodstraňujeme ze serveru
+        keychain.deleteDeviceInfo()
+        deviceInfo = nil
+        isRegistered = false
+        print("🗑️ Device unregistered locally only")
+    }
+
 }
 
 // MARK: - String Extension for SHA256

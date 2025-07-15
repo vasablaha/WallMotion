@@ -185,12 +185,38 @@ struct LoginView: View {
     
     private var authenticationSection: some View {
         VStack(spacing: 15) {
-            if authManager.isAuthenticated {
-                // Already authenticated
-                authenticatedState
-            } else {
-                // Need to authenticate
-                unauthenticatedState
+            // Single sign in button
+            Button {
+                Task {
+                    await authManager.authenticateWithWeb()
+                }
+            } label: {
+                HStack {
+                    if authManager.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                    }
+                    Text(authManager.isLoading ? "Signing In..." : "Sign In with Web Browser")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(authManager.isLoading)
+            
+            VStack(spacing: 6) {
+                Text("Don't have an account?")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                Button("Create Account") {
+                    if let url = URL(string: "https://wallmotion.eu/register") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.blue)
             }
         }
     }
