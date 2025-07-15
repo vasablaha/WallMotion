@@ -263,10 +263,7 @@ struct LicenseInfo: Codable {
     let deviceInfo: DeviceInfo?
 }
 
-struct DeviceInfo: Codable {
-    let name: String
-    let registeredAt: Date
-}
+
 
 struct DeviceRegistrationResponse: Codable {
     let success: Bool
@@ -281,6 +278,7 @@ struct Device: Codable, Identifiable {
     let id: String
     let fingerprint: String
     let name: String
+    let deviceDisplayName: String?  // NOVÉ - vlastní název zařízení
     let registeredAt: Date
     let lastSeen: Date
     let isActive: Bool
@@ -291,8 +289,24 @@ struct Device: Codable, Identifiable {
     
     enum CodingKeys: String, CodingKey {
         case id = "_id"
-        case fingerprint, name, registeredAt, lastSeen, isActive
+        case fingerprint, name, deviceDisplayName, registeredAt, lastSeen, isActive
         case macModel, macosVersion, appVersion, cognitoId
+    }
+    
+    // Helper computed property pro zobrazení názvu
+    var displayName: String {
+        return deviceDisplayName ?? name
+    }
+}
+
+struct DeviceInfo: Codable {
+    let name: String
+    let deviceDisplayName: String?  // NOVÉ
+    let registeredAt: Date
+    
+    // Helper computed property pro zobrazení názvu
+    var displayName: String {
+        return deviceDisplayName ?? name
     }
 }
 

@@ -15,7 +15,8 @@ class KeychainManager {
     private let deviceInfoKey = "DeviceInfo"
     private let authTokenKey = "AuthToken"
     private let userInfoKey = "UserInfo"
-    
+    private let service = "eu.wallmotion.app"
+
     private init() {}
     
     // MARK: - Generic Keychain Operations

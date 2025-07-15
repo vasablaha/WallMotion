@@ -128,8 +128,21 @@ struct LoginView: View {
                 HStack {
                     Text("Name:")
                         .foregroundColor(.secondary)
-                    Text(deviceManager.getDeviceName())
+                    Text(deviceManager.getDisplayDeviceName())  // ZMĚNA: použití displayName
                         .fontWeight(.medium)
+                }
+                
+                // Zobrazit původní název, pokud má vlastní deviceDisplayName
+                if let device = deviceManager.deviceInfo,
+                   device.deviceDisplayName != nil {
+                    HStack {
+                        Text("Original:")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text(device.name)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                 }
                 
                 if let model = deviceManager.getMacModel() {
@@ -157,22 +170,19 @@ struct LoginView: View {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
-                        Text("Registered & Active")
-                            .foregroundColor(.green)
+                        Text("Registered")
                             .fontWeight(.medium)
+                            .foregroundColor(.green)
                     }
                 }
             }
             .font(.caption)
         }
-        .padding(16)
+        .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(.blue.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(.blue.opacity(0.3), lineWidth: 1)
-                )
+                .fill(.blue.opacity(0.05))
+                .stroke(.blue.opacity(0.2), lineWidth: 1)
         )
     }
     
@@ -362,8 +372,21 @@ struct LoginView: View {
                 HStack {
                     Text("Name:")
                         .foregroundColor(.secondary)
-                    Text(deviceManager.getDeviceName())
+                    Text(deviceManager.getDisplayDeviceName())  // ZMĚNA: použití displayName
                         .fontWeight(.medium)
+                }
+                
+                // Zobrazit původní název, pokud má vlastní deviceDisplayName
+                if let device = deviceManager.deviceInfo,
+                   device.deviceDisplayName != nil {
+                    HStack {
+                        Text("Original:")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text(device.name)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                 }
                 
                 if let model = deviceManager.getMacModel() {
@@ -383,42 +406,12 @@ struct LoginView: View {
                             .fontWeight(.medium)
                     }
                 }
-                
-                HStack {
-                    Text("Status:")
-                        .foregroundColor(.secondary)
-                    
-                    if deviceManager.isRegistered {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Registered")
-                                .foregroundColor(.green)
-                                .fontWeight(.medium)
-                        }
-                    } else {
-                        HStack {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundColor(.orange)
-                            Text("Not Registered")
-                                .foregroundColor(.orange)
-                                .fontWeight(.medium)
-                        }
-                    }
-                }
             }
             .font(.caption)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(.blue.opacity(0.3), lineWidth: 1)
-                )
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
     
     private var authenticationSection: some View {
         VStack(spacing: 15) {

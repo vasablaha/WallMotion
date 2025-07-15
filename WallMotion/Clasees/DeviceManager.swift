@@ -16,6 +16,8 @@
 import Foundation
 import IOKit
 import Combine
+import CommonCrypto
+
 
 class DeviceManager: ObservableObject {
     static let shared = DeviceManager()
@@ -163,20 +165,6 @@ class DeviceManager: ObservableObject {
         return Host.current().localizedName ?? "Mac"
     }
     
-    // MARK: - Registration
-    
-    func checkRegistrationStatus() {
-        // Check if device is already registered (stored in keychain)
-        if let deviceData = keychain.getDeviceInfo() {
-            self.deviceInfo = deviceData
-            self.isRegistered = true
-            print("✅ Device already registered: \(deviceData.name)")
-        } else {
-            self.isRegistered = false
-            print("⚠️ Device not registered")
-        }
-    }
-    
     func registerDevice(authToken: String) async {
         print("🔧 Starting device registration...")
         
@@ -281,5 +269,27 @@ extension String {
     }
 }
 
+
+extension DeviceManager {
+    
+    // MARK: - Device Display Name Methods
+    
+    /// Vrátí název zařízení pro zobrazení - buď deviceDisplayName nebo name
+    func getDisplayDeviceName() -> String {
+        return deviceInfo?.displayName ?? getDeviceName()
+    }
+    
+    /// Aktualizace checkRegistrationStatus metody pro podporu deviceDisplayName
+    func checkRegistrationStatus() {
+        // Check if device is already registered (stored in keychain)
+        if let deviceData = keychain.getDeviceInfo() {
+            self.deviceInfo = deviceData
+            self.isRegistered = true
+            print("✅ Device already registered: \(deviceData.displayName)")
+        } else {
+            self.isRegistered = false
+            print("⚠️ Device not registered")
+        }
+    }
+}
 // Import CommonCrypto for SHA256
-import CommonCrypto
