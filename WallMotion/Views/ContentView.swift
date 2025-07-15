@@ -1,5 +1,5 @@
 //
-//  ContentView.swift (Updated with Authentication)
+//  ContentView.swift (Updated with Tutorial)
 //  WallMotion
 //
 //  Created by Václav Blaha on 13.07.2025.
@@ -13,6 +13,7 @@ import Combine
 enum MainViewType {
     case welcome
     case youtubeImport
+    case tutorial
 }
 
 struct ContentView: View {
@@ -32,8 +33,13 @@ struct ContentView: View {
     @State private var showingLoginSheet = false
     @State private var isPerformingInitialAuth = true
     @State private var currentView: MainViewType = .welcome
+    @State private var showingFirstTimeTutorial = false
+    @State private var showingHelpTutorial = false
     
     @Environment(\.colorScheme) private var colorScheme
+    
+    // UserDefaults key for tracking first launch
+    private let hasSeenTutorialKey = "HasSeenTutorial"
     
     var body: some View {
         Group {
@@ -54,6 +60,14 @@ struct ContentView: View {
         .sheet(isPresented: $showingLoginSheet) {
             LoginView()
                 .interactiveDismissDisabled(false)
+        }
+        .sheet(isPresented: $showingFirstTimeTutorial) {
+            TutorialView(onComplete: {
+                showingFirstTimeTutorial = false
+                UserDefaults.standard.set(true, forKey: hasSeenTutorialKey)
+            })
+            .frame(width: 700, height: 800)
+            .interactiveDismissDisabled(false)
         }
     }
     
@@ -230,6 +244,12 @@ struct ContentView: View {
                     
                     Divider()
                     
+                    Button("Show Tutorial") {
+                        showingFirstTimeTutorial = true
+                    }
+                    
+                    Divider()
+                    
                     Button("Purchase Additional License") {
                         if let url = URL(string: "https://wallmotion.eu/profile") {
                             NSWorkspace.shared.open(url)
@@ -246,6 +266,9 @@ struct ContentView: View {
                         .font(.title2)
                 }
             }
+        }
+        .onAppear {
+            checkForFirstTimeTutorial()
         }
     }
     
@@ -264,6 +287,11 @@ struct ContentView: View {
                     statusMessage = "YouTube video ready: \(videoURL.lastPathComponent)"
                     currentView = .welcome
                 }
+            case .tutorial:
+                TutorialView(onComplete: {
+                    currentView = .welcome
+                    showingHelpTutorial = false
+                })
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -380,6 +408,12 @@ struct ContentView: View {
             
             detectionSection
             
+            Divider()
+                .padding(.horizontal)
+            
+            // Help & Tutorial section
+            helpSection
+            
             Spacer()
             
             // User info footer
@@ -415,9 +449,7 @@ struct ContentView: View {
                 .fontWeight(.bold)
                 .fontDesign(.rounded)
             
-            Text("Premium Live Wallpapers")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            
         }
         .padding(.vertical, 30)
     }
@@ -599,6 +631,68 @@ struct ContentView: View {
         .padding(.vertical)
     }
     
+    // MARK: - Help Section
+    
+    private var helpSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Text("Help & Support")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            VStack(spacing: 8) {
+                // Tutorial button
+                Button(action: {
+                    if currentView == .tutorial {
+                        currentView = .welcome
+                    } else {
+                        currentView = .tutorial
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "graduationcap.fill")
+                            .foregroundColor(.blue)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Setup Tutorial")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
+                            
+                            Text("Step-by-step guide")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: currentView == .tutorial ? "chevron.down" : "chevron.right")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.blue.opacity(0.1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                
+            }
+            .padding(.horizontal)
+        }
+        .padding(.vertical)
+    }
+    
     // MARK: - User Info Footer
     
     private var userInfoFooter: some View {
@@ -670,6 +764,16 @@ struct ContentView: View {
                 print("⚠️ Authentication required")
             } else {
                 print("✅ Authentication successful")
+            }
+        }
+    }
+    
+    private func checkForFirstTimeTutorial() {
+        let hasSeenTutorial = UserDefaults.standard.bool(forKey: hasSeenTutorialKey)
+        if !hasSeenTutorial {
+            // Show tutorial after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                showingFirstTimeTutorial = true
             }
         }
     }
@@ -784,5 +888,3 @@ struct VideoPreviewCard: View {
         return nil
     }
 }
-
-
