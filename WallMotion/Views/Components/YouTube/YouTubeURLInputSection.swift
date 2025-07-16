@@ -2,7 +2,7 @@
 //  YouTubeURLInputSection.swift
 //  WallMotion
 //
-//  URL input section with processing-aware disable state
+//  URL input section with loading feedback for search button
 //
 
 import SwiftUI
@@ -12,6 +12,7 @@ struct YouTubeURLInputSection: View {
     let importManager: YouTubeImportManager
     let onFetchVideoInfo: () -> Void
     let isProcessing: Bool
+    let isFetchingVideoInfo: Bool  // NEW: Loading state for video info
     
     var body: some View {
         VStack(spacing: 20) {
@@ -23,33 +24,54 @@ struct YouTubeURLInputSection: View {
                 HStack {
                     TextField("https://youtube.com/watch?v=...", text: $youtubeURL)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .disabled(isProcessing)
+                        .disabled(isProcessing || isFetchingVideoInfo)
                         .onSubmit {
-                            if !isProcessing && importManager.validateYouTubeURL(youtubeURL) {
+                            if !isProcessing && !isFetchingVideoInfo && importManager.validateYouTubeURL(youtubeURL) {
                                 onFetchVideoInfo()
                             }
                         }
                     
                     Button(action: {
-                        if !isProcessing {
+                        if !isProcessing && !isFetchingVideoInfo {
                             onFetchVideoInfo()
                         }
                     }) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.title2)
-                            .foregroundColor(isProcessing ? .gray : .blue)
-                            .padding(10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke((isProcessing ? Color.gray : Color.blue).opacity(0.3), lineWidth: 1)
-                                    )
-                            )
+                        Group {
+                            if isFetchingVideoInfo {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .frame(width: 20, height: 20)
+                            } else {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.title2)
+                            }
+                        }
+                        .foregroundColor(isProcessing || isFetchingVideoInfo ? .gray : .blue)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke((isProcessing || isFetchingVideoInfo ? Color.gray : Color.blue).opacity(0.3), lineWidth: 1)
+                                )
+                        )
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .disabled(isProcessing || youtubeURL.isEmpty || !importManager.validateYouTubeURL(youtubeURL))
+                    .disabled(isProcessing || isFetchingVideoInfo || youtubeURL.isEmpty || !importManager.validateYouTubeURL(youtubeURL))
+                }
+                
+                // NEW: Loading feedback text
+                if isFetchingVideoInfo {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        
+                        Text("Fetching video information...")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.top, 4)
                 }
             }
             
@@ -198,7 +220,19 @@ struct YouTubeFormatRow: View {
             youtubeURL: .constant("https://youtube.com/watch?v=123"),
             importManager: YouTubeImportManager(),
             onFetchVideoInfo: {},
-            isProcessing: false
+            isProcessing: false,
+            isFetchingVideoInfo: false
+        )
+        
+        Text("Loading State")
+            .font(.headline)
+        
+        YouTubeURLInputSection(
+            youtubeURL: .constant("https://youtube.com/watch?v=123"),
+            importManager: YouTubeImportManager(),
+            onFetchVideoInfo: {},
+            isProcessing: false,
+            isFetchingVideoInfo: true
         )
         
         Text("Processing State")
@@ -208,7 +242,8 @@ struct YouTubeFormatRow: View {
             youtubeURL: .constant("https://youtube.com/watch?v=123"),
             importManager: YouTubeImportManager(),
             onFetchVideoInfo: {},
-            isProcessing: true
+            isProcessing: true,
+            isFetchingVideoInfo: false
         )
     }
     .padding()

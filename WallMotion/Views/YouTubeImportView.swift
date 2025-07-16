@@ -2,7 +2,7 @@
 //  YouTubeImportView.swift
 //  WallMotion
 //
-//  Main YouTube Import View - Final version
+//  Main YouTube Import View - Final version with complete loading states
 //
 
 import SwiftUI
@@ -18,6 +18,7 @@ struct YouTubeImportView: View {
     @State private var isProcessing = false
     @State private var processingProgress: Double = 0.0
     @State private var processingMessage = ""
+    @State private var isFetchingVideoInfo = false
     
     let onVideoReady: (URL) -> Void
     
@@ -30,7 +31,8 @@ struct YouTubeImportView: View {
                     youtubeURL: youtubeURL,
                     importManager: importManager,
                     showingTimeSelector: showingTimeSelector,
-                    isProcessing: isProcessing
+                    isProcessing: isProcessing,
+                    isFetchingVideoInfo: isFetchingVideoInfo  // NEW: Pass loading state
                 )
                 
                 if importManager.downloadedVideoURL == nil {
@@ -38,7 +40,8 @@ struct YouTubeImportView: View {
                         youtubeURL: $youtubeURL,
                         importManager: importManager,
                         onFetchVideoInfo: fetchVideoInfo,
-                        isProcessing: isProcessing
+                        isProcessing: isProcessing,
+                        isFetchingVideoInfo: isFetchingVideoInfo
                     )
                 } else {
                     YouTubeVideoPreviewSection(
@@ -100,22 +103,38 @@ struct YouTubeImportView: View {
     }
     
     private func fetchVideoInfo() {
-        guard !isProcessing else { return }
+        guard !isProcessing && !isFetchingVideoInfo else { return }
         
         print("🔍 User requested video info for: \(youtubeURL)")
+        
+        isFetchingVideoInfo = true
         
         Task {
             do {
                 let info = try await importManager.getVideoInfo(from: youtubeURL)
                 await MainActor.run {
+                    // Set correct max duration based on video length (max 5 minutes for wallpaper)
+                    importManager.maxDuration = min(info.duration, 300.0)
+                    
+                    // Reset time selection to reasonable defaults
+                    importManager.selectedStartTime = 0.0
+                    importManager.selectedEndTime = min(30.0, info.duration)
+                    
                     importManager.videoInfo = info
+                    isFetchingVideoInfo = false
+                    
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showingVideoInfo = true
                     }
+                    
                     print("✅ Video info loaded: \(info.title)")
+                    print("   📊 Duration: \(info.duration)s")
+                    print("   📊 Max selectable: \(importManager.maxDuration)s")
+                    print("   📊 Default selection: \(importManager.selectedStartTime)s - \(importManager.selectedEndTime)s")
                 }
             } catch {
                 await MainActor.run {
+                    isFetchingVideoInfo = false
                     print("❌ Failed to fetch video info: \(error)")
                     if let ytError = error as? YouTubeError {
                         print("   YouTube Error: \(ytError.errorDescription ?? "Unknown")")
@@ -172,6 +191,7 @@ struct YouTubeImportView: View {
         print("⚙️ User initiated video processing")
         print("   📁 Input: \(inputURL.path)")
         print("   ⏰ Range: \(importManager.selectedStartTime)s - \(importManager.selectedEndTime)s")
+        print("   ⏰ Duration: \(importManager.selectedEndTime - importManager.selectedStartTime)s")
         
         isProcessing = true
         processingProgress = 0.0
@@ -210,7 +230,7 @@ struct YouTubeImportView: View {
     }
     
     private func resetImport() {
-        guard !isProcessing else { return }
+        guard !isProcessing && !isFetchingVideoInfo else { return }
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             importManager.cleanup()
@@ -220,6 +240,7 @@ struct YouTubeImportView: View {
             isProcessing = false
             processingProgress = 0.0
             processingMessage = ""
+            isFetchingVideoInfo = false
         }
     }
 }

@@ -2,13 +2,23 @@
 //  YouTubeTimeSelectorSection.swift
 //  WallMotion
 //
-//  Time selector section with working range slider
+//  Time selector section with correct video duration handling
 //
 
 import SwiftUI
 
 struct YouTubeTimeSelectorSection: View {
     @ObservedObject var importManager: YouTubeImportManager
+    
+    // Computed property to get actual video duration
+    private var actualVideoDuration: Double {
+        return importManager.videoInfo?.duration ?? importManager.maxDuration
+    }
+    
+    // Computed property to get the maximum selectable duration (5 minutes or video length)
+    private var maxSelectableDuration: Double {
+        return min(actualVideoDuration, 300.0) // Max 5 minutes for wallpaper
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -31,18 +41,41 @@ struct YouTubeTimeSelectorSection: View {
                 YouTubeRangeSliderView(
                     startValue: $importManager.selectedStartTime,
                     endValue: $importManager.selectedEndTime,
-                    bounds: 0...importManager.maxDuration,
+                    bounds: 0...maxSelectableDuration,
                     step: 1
                 )
                 .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                 
-                YouTubeTimeMarkers(maxDuration: importManager.maxDuration)
+                YouTubeTimeMarkers(
+                    maxDuration: maxSelectableDuration,
+                    actualDuration: actualVideoDuration
+                )
                 
-                Text("Recommended: 30-60 seconds for best wallpaper performance")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 8)
+                VStack(spacing: 8) {
+                    Text("Recommended: 30-60 seconds for best wallpaper performance")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    // NEW: Show video duration info
+                    if let videoInfo = importManager.videoInfo {
+                        let videoDurationText = formatTime(videoInfo.duration)
+                        let maxSelectableText = formatTime(maxSelectableDuration)
+                        
+                        if videoInfo.duration > 300.0 {
+                            Text("Video duration: \(videoDurationText) • Max selectable: \(maxSelectableText)")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                                .multilineTextAlignment(.center)
+                        } else {
+                            Text("Video duration: \(videoDurationText)")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                }
+                .padding(.top, 8)
             }
         }
         .padding()
@@ -55,6 +88,12 @@ struct YouTubeTimeSelectorSection: View {
                 )
         )
         .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+    
+    private func formatTime(_ seconds: Double) -> String {
+        let minutes = Int(seconds) / 60
+        let remainingSeconds = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
 
@@ -136,20 +175,47 @@ struct YouTubeTimeRangeDisplay: View {
 
 struct YouTubeTimeMarkers: View {
     let maxDuration: Double
+    let actualDuration: Double
     
     var body: some View {
-        HStack {
-            Text("0:00")
-                .font(.caption)
-                .foregroundColor(.secondary)
+        VStack(spacing: 4) {
+            HStack {
+                Text("0:00")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text(formatTime(maxDuration))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
             
-            Spacer()
-            
-            Text(formatTime(maxDuration))
-                .font(.caption)
-                .foregroundColor(.secondary)
+            // NEW: Show if video is longer than selectable range
+            if actualDuration > maxDuration {
+                HStack {
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                        
+                        Text("Video continues to \(formatTime(actualDuration))")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.blue.opacity(0.1))
+                    )
+                }
+                .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+            }
         }
-        .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
     }
     
     private func formatTime(_ seconds: Double) -> String {
