@@ -75,15 +75,10 @@ struct ContentView: View {
     
     private var initialLoadingView: some View {
         VStack(spacing: 20) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 60, weight: .ultraLight))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.blue, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            Image("logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 50, height: 50)
             
             Text("WallMotion")
                 .font(.largeTitle)
@@ -434,15 +429,10 @@ struct ContentView: View {
     
     private var headerSection: some View {
         VStack(spacing: 15) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 50, weight: .ultraLight))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.blue, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            Image("logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 50, height: 50)
             
             Text("WallMotion")
                 .font(.largeTitle)
