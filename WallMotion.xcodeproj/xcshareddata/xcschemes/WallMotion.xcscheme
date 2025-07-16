@@ -15,8 +15,8 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "58541E4C2E27B64E00C9C8D0"
-               BuildableName = "VideoSaver.saver"
+               BlueprintIdentifier = "58541E682E27C4C900C9C8D0"
+               BuildableName = "VideoSaver"
                BlueprintName = "VideoSaver"
                ReferencedContainer = "container:WallMotion.xcodeproj">
             </BuildableReference>

@@ -20,6 +20,7 @@ struct ContentView: View {
     @StateObject private var wallpaperManager = WallpaperManager()
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var deviceManager = DeviceManager.shared
+    @StateObject private var videoSaverManager = VideoSaverManager()
     
     @State private var selectedVideoURL: URL?
     @State private var selectedLibraryVideo: WallpaperVideo?
@@ -35,11 +36,7 @@ struct ContentView: View {
     @State private var currentView: MainViewType = .welcome
     @State private var showingFirstTimeTutorial = false
     @State private var showingHelpTutorial = false
-    
-    // ✅ PŘIDEJ TOTO:
-    @State private var videoSaverInstaller = VideoSaverInstaller()
-    @State private var isVideoSaverInstalled = false
-    @State private var videoSaverMessage = ""
+
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -268,7 +265,6 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            setupVideoSaver()
             checkForFirstTimeTutorial()
         }
     }
@@ -298,106 +294,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
-    private var videoSaverSection: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: isVideoSaverInstalled ? "checkmark.circle.fill" : "exclamationmark.circle")
-                        .foregroundColor(isVideoSaverInstalled ? .green : .orange)
-                        .font(.title2)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("VideoSaver")
-                            .font(.headline)
-                            .fontWeight(.medium)
-                        
-                        Text(isVideoSaverInstalled ?
-                             "Auto-refresh active" :
-                             "Auto-refresh inactive")
-                            .font(.caption)
-                            .foregroundColor(isVideoSaverInstalled ? .green : .orange)
-                    }
-                    
-                    Spacer()
-                }
-                
-                Text(isVideoSaverInstalled ?
-                     "VideoSaver will automatically refresh your wallpaper when Mac wakes up." :
-                     "VideoSaver helps maintain wallpaper quality after sleep/wake cycles.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.leading)
-                
-                if !videoSaverMessage.isEmpty {
-                    Text(videoSaverMessage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 4)
-                }
-                
-                if !isVideoSaverInstalled {
-                    Button("Install VideoSaver") {
-                        installVideoSaver()
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                }
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(colorScheme == .dark ? Color.black.opacity(0.3) : Color.white.opacity(0.8))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-            )
-        }
-    
-    
-    private func setupVideoSaver() {
-        print("🔧 Setting up VideoSaver...")
-        
-        // Zkontroluj jestli je nainstalován
-        isVideoSaverInstalled = videoSaverInstaller.isVideoSaverInstalled()
-        
-        if isVideoSaverInstalled {
-            print("✅ VideoSaver already installed")
-            videoSaverMessage = "Ready for auto-refresh"
-        } else {
-            print("⚠️ VideoSaver not installed - auto-installing...")
-            videoSaverMessage = "Installing automatically..."
-            
-            // Automaticky nainstaluj při prvním spuštění
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                installVideoSaver()
-            }
-        }
-    }
-    
-    private func installVideoSaver() {
-            print("🚀 Installing VideoSaver...")
-            videoSaverMessage = "Installing VideoSaver..."
-            
-            DispatchQueue.global().async {
-                let success = videoSaverInstaller.installVideoSaver()
-                
-                DispatchQueue.main.async {
-                    if success {
-                        isVideoSaverInstalled = true
-                        videoSaverMessage = "VideoSaver installed successfully!"
-                        print("✅ VideoSaver installed successfully")
-                        
-                        // Vymaž zprávu po 3 sekundách
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                            videoSaverMessage = ""
-                        }
-                    } else {
-                        isVideoSaverInstalled = false
-                        videoSaverMessage = "Installation failed. Try again."
-                        print("❌ VideoSaver installation failed")
-                    }
-                }
-            }
-        }
     
     // MARK: - Welcome View
     
@@ -513,8 +409,7 @@ struct ContentView: View {
             Divider()
                 .padding(.horizontal)
             
-            videoSaverSection
-            
+            VideoSaverSectionView(videoSaverManager: videoSaverManager)
             Divider()
                 .padding(.horizontal)
             
@@ -869,6 +764,8 @@ struct ContentView: View {
             }
         }
     }
+
+    
     
     private func checkForFirstTimeTutorial() {
         let hasSeenTutorial = UserDefaults.standard.bool(forKey: hasSeenTutorialKey)

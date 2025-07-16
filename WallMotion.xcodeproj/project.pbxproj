@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		58541E642E27C30900C9C8D0 /* VideoSaver.saver in CopyFiles */ = {isa = PBXBuildFile; fileRef = 58541E4D2E27B64E00C9C8D0 /* VideoSaver.saver */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		58541E742E27C82000C9C8D0 /* VideoSaver in CopyFiles */ = {isa = PBXBuildFile; fileRef = 58541E692E27C4C900C9C8D0 /* VideoSaver */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,11 +25,11 @@
 			remoteGlobalIDString = 3516364F2E23F6FC00C8C331;
 			remoteInfo = WallMotion;
 		};
-		58541E612E27C20E00C9C8D0 /* PBXContainerItemProxy */ = {
+		58541E722E27C81900C9C8D0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 351636482E23F6FC00C8C331 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 58541E4C2E27B64E00C9C8D0;
+			remoteGlobalIDString = 58541E682E27C4C900C9C8D0;
 			remoteInfo = VideoSaver;
 		};
 /* End PBXContainerItemProxy section */
@@ -41,9 +41,18 @@
 			dstPath = "";
 			dstSubfolderSpec = 7;
 			files = (
-				58541E642E27C30900C9C8D0 /* VideoSaver.saver in CopyFiles */,
+				58541E742E27C82000C9C8D0 /* VideoSaver in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
+		};
+		58541E672E27C4C900C9C8D0 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -51,7 +60,7 @@
 		351636502E23F6FC00C8C331 /* WallMotion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WallMotion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		58541E4D2E27B64E00C9C8D0 /* VideoSaver.saver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VideoSaver.saver; sourceTree = BUILT_PRODUCTS_DIR; };
+		58541E692E27C4C900C9C8D0 /* VideoSaver */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = VideoSaver; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -61,13 +70,6 @@
 				Info.plist,
 			);
 			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
-		};
-		58541E5E2E27B6FD00C9C8D0 /* Exceptions for "VideoSaver" folder in "VideoSaver" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Contents/MacOS/VideoSaver-Bridging-Header.h",
-			);
-			target = 58541E4C2E27B64E00C9C8D0 /* VideoSaver */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -90,11 +92,8 @@
 			path = WallMotionUITests;
 			sourceTree = "<group>";
 		};
-		58541E4E2E27B64E00C9C8D0 /* VideoSaver */ = {
+		58541E6A2E27C4C900C9C8D0 /* VideoSaver */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				58541E5E2E27B6FD00C9C8D0 /* Exceptions for "VideoSaver" folder in "VideoSaver" target */,
-			);
 			path = VideoSaver;
 			sourceTree = "<group>";
 		};
@@ -122,7 +121,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		58541E4A2E27B64E00C9C8D0 /* Frameworks */ = {
+		58541E662E27C4C900C9C8D0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -138,7 +137,7 @@
 				351636522E23F6FC00C8C331 /* WallMotion */,
 				351636612E23F6FE00C8C331 /* WallMotionTests */,
 				3516366B2E23F6FE00C8C331 /* WallMotionUITests */,
-				58541E4E2E27B64E00C9C8D0 /* VideoSaver */,
+				58541E6A2E27C4C900C9C8D0 /* VideoSaver */,
 				351636512E23F6FC00C8C331 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -149,22 +148,12 @@
 				351636502E23F6FC00C8C331 /* WallMotion.app */,
 				3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */,
 				351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */,
-				58541E4D2E27B64E00C9C8D0 /* VideoSaver.saver */,
+				58541E692E27C4C900C9C8D0 /* VideoSaver */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXHeadersBuildPhase section */
-		58541E482E27B64E00C9C8D0 /* Headers */ = {
-			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		3516364F2E23F6FC00C8C331 /* WallMotion */ = {
@@ -179,7 +168,7 @@
 			buildRules = (
 			);
 			dependencies = (
-				58541E622E27C20E00C9C8D0 /* PBXTargetDependency */,
+				58541E732E27C81900C9C8D0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				351636522E23F6FC00C8C331 /* WallMotion */,
@@ -237,28 +226,27 @@
 			productReference = 351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		58541E4C2E27B64E00C9C8D0 /* VideoSaver */ = {
+		58541E682E27C4C900C9C8D0 /* VideoSaver */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 58541E532E27B64E00C9C8D0 /* Build configuration list for PBXNativeTarget "VideoSaver" */;
+			buildConfigurationList = 58541E6D2E27C4C900C9C8D0 /* Build configuration list for PBXNativeTarget "VideoSaver" */;
 			buildPhases = (
-				58541E482E27B64E00C9C8D0 /* Headers */,
-				58541E492E27B64E00C9C8D0 /* Sources */,
-				58541E4A2E27B64E00C9C8D0 /* Frameworks */,
-				58541E4B2E27B64E00C9C8D0 /* Resources */,
+				58541E652E27C4C900C9C8D0 /* Sources */,
+				58541E662E27C4C900C9C8D0 /* Frameworks */,
+				58541E672E27C4C900C9C8D0 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				58541E4E2E27B64E00C9C8D0 /* VideoSaver */,
+				58541E6A2E27C4C900C9C8D0 /* VideoSaver */,
 			);
 			name = VideoSaver;
 			packageProductDependencies = (
 			);
 			productName = VideoSaver;
-			productReference = 58541E4D2E27B64E00C9C8D0 /* VideoSaver.saver */;
-			productType = "com.apple.product-type.bundle";
+			productReference = 58541E692E27C4C900C9C8D0 /* VideoSaver */;
+			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -267,7 +255,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1630;
+				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1630;
 				TargetAttributes = {
 					3516364F2E23F6FC00C8C331 = {
@@ -281,9 +269,8 @@
 						CreatedOnToolsVersion = 16.3;
 						TestTargetID = 3516364F2E23F6FC00C8C331;
 					};
-					58541E4C2E27B64E00C9C8D0 = {
+					58541E682E27C4C900C9C8D0 = {
 						CreatedOnToolsVersion = 16.4;
-						LastSwiftMigration = 1640;
 					};
 				};
 			};
@@ -304,7 +291,7 @@
 				3516364F2E23F6FC00C8C331 /* WallMotion */,
 				3516365D2E23F6FE00C8C331 /* WallMotionTests */,
 				351636672E23F6FE00C8C331 /* WallMotionUITests */,
-				58541E4C2E27B64E00C9C8D0 /* VideoSaver */,
+				58541E682E27C4C900C9C8D0 /* VideoSaver */,
 			);
 		};
 /* End PBXProject section */
@@ -325,13 +312,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		351636662E23F6FE00C8C331 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		58541E4B2E27B64E00C9C8D0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -362,7 +342,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		58541E492E27B64E00C9C8D0 /* Sources */ = {
+		58541E652E27C4C900C9C8D0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -382,10 +362,10 @@
 			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
 			targetProxy = 351636692E23F6FE00C8C331 /* PBXContainerItemProxy */;
 		};
-		58541E622E27C20E00C9C8D0 /* PBXTargetDependency */ = {
+		58541E732E27C81900C9C8D0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 58541E4C2E27B64E00C9C8D0 /* VideoSaver */;
-			targetProxy = 58541E612E27C20E00C9C8D0 /* PBXContainerItemProxy */;
+			target = 58541E682E27C4C900C9C8D0 /* VideoSaver */;
+			targetProxy = 58541E722E27C81900C9C8D0 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -636,50 +616,25 @@
 			};
 			name = Release;
 		};
-		58541E542E27B64E00C9C8D0 /* Debug */ = {
+		58541E6E2E27C4C900C9C8D0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = GJMB6NKTWK;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSPrincipalClass = VideoSaverView;
-				INSTALL_PATH = "$(HOME)/Library/Screen Savers";
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.VideoSaver";
+				ENABLE_HARDENED_RUNTIME = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "VideoSaver/Contents/MacOS/VideoSaver-Bridging-Header.h";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 6.0;
-				WRAPPER_EXTENSION = saver;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		58541E552E27B64E00C9C8D0 /* Release */ = {
+		58541E6F2E27C4C900C9C8D0 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = GJMB6NKTWK;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSPrincipalClass = VideoSaverView;
-				INSTALL_PATH = "$(HOME)/Library/Screen Savers";
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "tapp-studio.VideoSaver";
+				ENABLE_HARDENED_RUNTIME = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "VideoSaver/Contents/MacOS/VideoSaver-Bridging-Header.h";
-				SWIFT_VERSION = 6.0;
-				WRAPPER_EXTENSION = saver;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -722,11 +677,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		58541E532E27B64E00C9C8D0 /* Build configuration list for PBXNativeTarget "VideoSaver" */ = {
+		58541E6D2E27C4C900C9C8D0 /* Build configuration list for PBXNativeTarget "VideoSaver" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				58541E542E27B64E00C9C8D0 /* Debug */,
-				58541E552E27B64E00C9C8D0 /* Release */,
+				58541E6E2E27C4C900C9C8D0 /* Debug */,
+				58541E6F2E27C4C900C9C8D0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
