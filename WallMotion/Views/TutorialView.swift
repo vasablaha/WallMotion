@@ -20,12 +20,12 @@ struct TutorialView: View {
     
     private let tutorialSteps: [TutorialStep] = [
         TutorialStep(
-            title: "Welcome to WallMotion",
-            subtitle: "Let's set up your first live wallpaper",
-            content: "WallMotion allows you to use custom videos as your macOS wallpaper. Follow these steps to get started with your first live wallpaper.",
-            icon: "desktopcomputer",
-            videoPlaceholder: "Welcome animation or app overview"
-        ),
+                   title: "Choose Video Wallpaper",
+                   subtitle: "Select 'Sonoma Horizon' wallpaper",
+                   content: "In the Wallpaper settings, scroll down to the Dynamic Desktop section and select 'Sonoma Horizon' wallpaper. This specific wallpaper creates the correct video wallpaper structure that WallMotion needs to function properly.",
+                   icon: "video.fill",
+                   videoPlaceholder: "Screen recording of selecting Sonoma Horizon wallpaper"
+               ),
         TutorialStep(
             title: "Open System Settings",
             subtitle: "Navigate to Wallpaper settings",
