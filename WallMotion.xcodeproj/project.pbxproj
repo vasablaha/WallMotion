@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		58541E642E27C30900C9C8D0 /* VideoSaver.saver in CopyFiles */ = {isa = PBXBuildFile; fileRef = 58541E4D2E27B64E00C9C8D0 /* VideoSaver.saver */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3516365F2E23F6FE00C8C331 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,7 +25,27 @@
 			remoteGlobalIDString = 3516364F2E23F6FC00C8C331;
 			remoteInfo = WallMotion;
 		};
+		58541E612E27C20E00C9C8D0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 351636482E23F6FC00C8C331 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 58541E4C2E27B64E00C9C8D0;
+			remoteInfo = VideoSaver;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		58541E632E27C2EF00C9C8D0 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				58541E642E27C30900C9C8D0 /* VideoSaver.saver in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		351636502E23F6FC00C8C331 /* WallMotion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WallMotion.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -150,10 +174,12 @@
 				3516364C2E23F6FC00C8C331 /* Sources */,
 				3516364D2E23F6FC00C8C331 /* Frameworks */,
 				3516364E2E23F6FC00C8C331 /* Resources */,
+				58541E632E27C2EF00C9C8D0 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				58541E622E27C20E00C9C8D0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				351636522E23F6FC00C8C331 /* WallMotion */,
@@ -355,6 +381,11 @@
 			isa = PBXTargetDependency;
 			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
 			targetProxy = 351636692E23F6FE00C8C331 /* PBXContainerItemProxy */;
+		};
+		58541E622E27C20E00C9C8D0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 58541E4C2E27B64E00C9C8D0 /* VideoSaver */;
+			targetProxy = 58541E612E27C20E00C9C8D0 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -609,6 +640,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -632,6 +664,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;

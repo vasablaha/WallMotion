@@ -149,8 +149,10 @@ class WallpaperManager: ObservableObject {
 
         progressCallback(1.0, "Wallpaper replaced! Check System Settings!")
         print("Replacement completed successfully!")
-
-        // Touch + restart WallpaperAgent
+        
+        createMarkerFile()
+        
+        // ✅ FIX: Touch + restart WallpaperAgent (macOS reloads wallpaper)
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
             let touchResult = self.runShell("touch", [targetPath])
             print("Touched new wallpaper file: \(touchResult)")
@@ -159,6 +161,30 @@ class WallpaperManager: ObservableObject {
             print("WallpaperAgent killed: \(killResult)")
         }
     }
+    
+    private func createMarkerFile() {
+        let markerPath = "\(wallpaperPath)/wallmotion_active"
+        let markerContent = "VideoSaver integration active\n\(Date().description)"
+        
+        do {
+            try markerContent.write(toFile: markerPath, atomically: true, encoding: .utf8)
+            print("✅ VideoSaver marker file created: \(markerPath)")
+        } catch {
+            print("⚠️ Failed to create VideoSaver marker file: \(error)")
+        }
+    }
+
+    private func removeMarkerFile() {
+        let markerPath = "\(wallpaperPath)/wallmotion_active"
+        
+        do {
+            try FileManager.default.removeItem(atPath: markerPath)
+            print("✅ VideoSaver marker file removed")
+        } catch {
+            print("⚠️ Failed to remove VideoSaver marker file: \(error)")
+        }
+    }
+
 
     // MARK: - Shell execution helper
     func runShell(_ command: String, _ arguments: [String]) -> String {
