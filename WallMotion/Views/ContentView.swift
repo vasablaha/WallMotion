@@ -465,6 +465,8 @@ struct ContentView: View {
             .padding(.horizontal)
             
             Button(action: {
+                // OPRAVA: Vždy přepnout na welcome view když uživatel chce nahrát soubor
+                currentView = .welcome
                 showingFilePicker = true
             }) {
                 HStack {
