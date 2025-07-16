@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 class WallpaperManager: ObservableObject {
     @Published var availableWallpapers: [String] = []
@@ -9,14 +10,44 @@ class WallpaperManager: ObservableObject {
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
 
     // MARK: - Init
-
     init() {
         print("WallpaperManager: Premium version initialized")
         detectCurrentWallpaper()
+        registerForLockNotifications()
+    }
+
+    // MARK: - Notifications
+    private func registerForLockNotifications() {
+        let center = DistributedNotificationCenter.default()
+        center.addObserver(self,
+                           selector: #selector(screenLocked),
+                           name: NSNotification.Name("com.apple.screenIsLocked"),
+                           object: nil)
+        center.addObserver(self,
+                           selector: #selector(screenUnlocked),
+                           name: NSNotification.Name("com.apple.screenIsUnlocked"),
+                           object: nil)
+    }
+
+    @objc private func screenLocked(_ notification: Notification) {
+        print("Screen locked - pausing wallpaper agent")
+        _ = runShell("killall", ["WallpaperAgent"])
+    }
+
+    @objc private func screenUnlocked(_ notification: Notification) {
+        print("Screen unlocked - restarting wallpaper agent")
+        reloadWallpaperAgent()
+    }
+
+    private func reloadWallpaperAgent() {
+        guard !detectedWallpaper.isEmpty else { return }
+        let targetPath = "\(wallpaperPath)/\(detectedWallpaper).mov"
+        print("Reloading wallpaper agent for file: \(targetPath)")
+        _ = runShell("touch", [targetPath])
+        _ = runShell("killall", ["WallpaperAgent"])
     }
 
     // MARK: - Detecting
-
     func detectCurrentWallpaper() {
         print("Detecting currently set wallpaper...")
         print("Scanning: \(wallpaperPath)")
@@ -30,7 +61,9 @@ class WallpaperManager: ObservableObject {
 
         do {
             let files = try FileManager.default.contentsOfDirectory(atPath: wallpaperPath)
-            let movFiles = files.filter { $0.hasSuffix(".mov") && !$0.contains(".backup") }
+            let movFiles = files.filter {
+                $0.hasSuffix(".mov") && !$0.contains(".backup")
+            }
 
             print("Found \(movFiles.count) .mov files in folder")
 
@@ -70,7 +103,6 @@ class WallpaperManager: ObservableObject {
     }
 
     // MARK: - Replacing
-
     func replaceWallpaper(
         videoURL: URL,
         progressCallback: @escaping (Double, String) -> Void
@@ -79,10 +111,7 @@ class WallpaperManager: ObservableObject {
         print("Source video: \(videoURL.path)")
 
         progressCallback(0.1, "Detecting current wallpaper...")
-
-        await MainActor.run {
-            detectCurrentWallpaper()
-        }
+        await MainActor.run { detectCurrentWallpaper() }
 
         guard !detectedWallpaper.isEmpty,
               !detectedWallpaper.contains("No wallpaper"),
@@ -95,7 +124,6 @@ class WallpaperManager: ObservableObject {
         let targetPath = "\(wallpaperPath)/\(targetFileName)"
 
         progressCallback(0.2, "Preparing video...")
-
         let tempDir = FileManager.default.temporaryDirectory
         let tempVideoPath = tempDir.appendingPathComponent("wallpaper_temp.mov").path
         let backupPath = "\(targetPath).backup.\(Int(Date().timeIntervalSince1970))"
@@ -122,7 +150,7 @@ class WallpaperManager: ObservableObject {
         progressCallback(1.0, "Wallpaper replaced! Check System Settings!")
         print("Replacement completed successfully!")
 
-        // ✅ FIX: Touch + restart WallpaperAgent (macOS reloads wallpaper)
+        // Touch + restart WallpaperAgent
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
             let touchResult = self.runShell("touch", [targetPath])
             print("Touched new wallpaper file: \(touchResult)")
@@ -133,7 +161,6 @@ class WallpaperManager: ObservableObject {
     }
 
     // MARK: - Shell execution helper
-
     func runShell(_ command: String, _ arguments: [String]) -> String {
         let task = Process()
         task.launchPath = "/usr/bin/env"
@@ -153,12 +180,9 @@ class WallpaperManager: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    // MARK: - AppleScript batch (beze změny)
-
+    // MARK: - AppleScript batch
     private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
-        await MainActor.run {
-            progressCallback(0.5, "Cleaning and installing wallpaper...")
-        }
+        await MainActor.run { progressCallback(0.5, "Cleaning and installing wallpaper...") }
 
         let batchScript = """
         do shell script "
