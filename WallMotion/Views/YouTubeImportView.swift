@@ -44,9 +44,9 @@ struct YouTubeImportView: View {
                         isFetchingVideoInfo: isFetchingVideoInfo
                     )
                 } else {
-                    YouTubeVideoPreviewSection(
-                        videoURL: importManager.downloadedVideoURL!
-                    )
+                    WorkingVideoPreview(
+                        videoURL: (importManager.downloadedVideoURL)!
+                        )
                 }
                 
                 if showingVideoInfo {
