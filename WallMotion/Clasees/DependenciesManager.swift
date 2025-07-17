@@ -226,29 +226,37 @@ class DependenciesManager: ObservableObject {
             task.standardOutput = outputPipe
             task.standardError = errorPipe
             
-            var allOutput = ""
-            var allErrors = ""
+            // Use actor-isolated data storage
+            let outputCollector = OutputCollector()
+            let errorCollector = OutputCollector()
             
-            // Simulate progress during installation
-            let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            // Create progress timer that's sendable
+            let progressTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
+            progressTimer.schedule(deadline: .now(), repeating: .milliseconds(500))
+            progressTimer.setEventHandler { [weak self] in
                 Task { @MainActor in
-                    if self.isInstalling {
-                        let currentProgress = self.installationProgress
-                        let increment = (progressEnd - progressStart) * 0.1
-                        let newProgress = min(currentProgress + increment, progressEnd - 0.01)
-                        self.installationProgress = newProgress
-                    } else {
-                        timer.invalidate()
+                    guard let self = self, self.isInstalling else {
+                        progressTimer.cancel()
+                        return
                     }
+                    
+                    let currentProgress = self.installationProgress
+                    let increment = (progressEnd - progressStart) * 0.1
+                    let newProgress = min(currentProgress + increment, progressEnd - 0.01)
+                    self.installationProgress = newProgress
                 }
             }
+            progressTimer.resume()
             
             // Monitor output
             outputPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty {
                     let output = String(data: data, encoding: .utf8) ?? ""
-                    allOutput += output
+                    
+                    Task {
+                        await outputCollector.append(data)
+                    }
                     
                     // Update installation message with relevant output
                     let lines = output.components(separatedBy: .newlines)
@@ -268,13 +276,14 @@ class DependenciesManager: ObservableObject {
             errorPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allErrors += output
+                    Task {
+                        await errorCollector.append(data)
+                    }
                 }
             }
             
             task.terminationHandler = { task in
-                progressTimer.invalidate()
+                progressTimer.cancel()
                 outputPipe.fileHandleForReading.readabilityHandler = nil
                 errorPipe.fileHandleForReading.readabilityHandler = nil
                 
@@ -287,14 +296,20 @@ class DependenciesManager: ObservableObject {
                     continuation.resume()
                 } else {
                     print("❌ \(description) failed with exit code: \(task.terminationStatus)")
-                    print("Error output: \(allErrors)")
                     
-                    let error = DependencyError.installationFailed(
-                        description: description,
-                        exitCode: task.terminationStatus,
-                        output: allErrors.isEmpty ? allOutput : allErrors
-                    )
-                    continuation.resume(throwing: error)
+                    Task {
+                        let allErrors = await errorCollector.getString()
+                        let allOutput = await outputCollector.getString()
+                        
+                        print("Error output: \(allErrors)")
+                        
+                        let error = DependencyError.installationFailed(
+                            description: description,
+                            exitCode: task.terminationStatus,
+                            output: allErrors.isEmpty ? allOutput : allErrors
+                        )
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
             
@@ -302,7 +317,7 @@ class DependenciesManager: ObservableObject {
                 try task.run()
                 self.installationTask = task
             } catch {
-                progressTimer.invalidate()
+                progressTimer.cancel()
                 print("❌ Failed to start \(description): \(error)")
                 continuation.resume(throwing: error)
             }

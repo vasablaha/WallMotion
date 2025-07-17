@@ -2,7 +2,7 @@
 //  YouTubeImportManager.swift
 //  WallMotion
 //
-//  Clean YouTube video download and processing manager
+//  Simplified YouTube video download manager using DependenciesManager
 //
 
 import Foundation
@@ -21,8 +21,8 @@ class YouTubeImportManager: ObservableObject {
     @Published var selectedEndTime: Double = 30.0
     @Published var maxDuration: Double = 300.0 // 5 minutes max for wallpaper
     
+    // MARK: - Dependencies
     @Published var dependenciesManager = DependenciesManager()
-
     
     // MARK: - Properties
     let tempDirectory = FileManager.default.temporaryDirectory
@@ -98,12 +98,13 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.invalidURL
         }
         
+        // Check if yt-dlp exists
         let deps = dependenciesManager.checkDependencies()
         guard deps.ytdlp else {
             print("❌ yt-dlp not found")
             throw YouTubeError.ytDlpNotFound
         }
-
+        
         let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
         guard let ytdlpPath = ytdlpPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
             throw YouTubeError.ytDlpNotFound
@@ -121,6 +122,7 @@ class YouTubeImportManager: ObservableObject {
                 "--no-warnings",
                 urlString
             ]
+            
             let outputPipe = Pipe()
             let errorPipe = Pipe()
             task.standardOutput = outputPipe
@@ -174,12 +176,12 @@ class YouTubeImportManager: ObservableObject {
     
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         print("🎥 Starting YouTube download process...")
-        
+
+        // Check dependencies
         let deps = dependenciesManager.checkDependencies()
         guard deps.ytdlp else {
             throw YouTubeError.ytDlpNotFound
         }
-
 
         isDownloading = true
         downloadProgress = 0.0
@@ -188,7 +190,6 @@ class YouTubeImportManager: ObservableObject {
         let baseFilename = "youtube_video_\(uniqueID)"
         let outputTemplate = tempDirectory.appendingPathComponent("\(baseFilename).%(ext)s").path
         
-        // Check if yt-dlp exists
         let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
         guard let ytdlpPath = ytdlpPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
             throw YouTubeError.ytDlpNotFound
@@ -198,7 +199,6 @@ class YouTubeImportManager: ObservableObject {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: ytdlpPath)
             
-            // Preserve your original format string
             task.arguments = [
                 "-f", "bestvideo[ext=mp4][height<=2160]/bestvideo[height<=2160]/bestvideo[ext=mp4]/bestvideo",
                 "--merge-output-format", "mp4",
@@ -217,18 +217,35 @@ class YouTubeImportManager: ObservableObject {
             task.standardOutput = outputPipe
             task.standardError = errorPipe
             
-            var allOutput = ""
-            var allErrors = ""
+            // Use actor-isolated data storage
+            let outputCollector = OutputCollector()
+            let errorCollector = OutputCollector()
             
             // Monitor stdout for progress
             outputPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty {
                     let output = String(data: data, encoding: .utf8) ?? ""
-                    allOutput += output
                     
-                    // Call parseDownloadProgress directly (now nonisolated)
-                    self.parseDownloadProgress(output, progressCallback: progressCallback)
+                    Task {
+                        await outputCollector.append(data)
+                    }
+                    
+                    // Only log progress lines and errors, not all output
+                    if output.contains("[download]") && output.contains("%") {
+                        let lines = output.components(separatedBy: .newlines)
+                        for line in lines {
+                            if line.contains("[download]") && line.contains("%") {
+                                print("📥 \(line.trimmingCharacters(in: .whitespacesAndNewlines))")
+                                break
+                            }
+                        }
+                    }
+                    
+                    // Parse download progress on main thread
+                    DispatchQueue.main.async {
+                        self.parseDownloadProgress(output, progressCallback: progressCallback)
+                    }
                 }
             }
             
@@ -236,110 +253,100 @@ class YouTubeImportManager: ObservableObject {
             errorPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allErrors += output
+                    Task {
+                        await errorCollector.append(data)
+                    }
+                }
+            }
+            
+            task.terminationHandler = { task in
+                outputPipe.fileHandleForReading.readabilityHandler = nil
+                errorPipe.fileHandleForReading.readabilityHandler = nil
+                
+                if task.terminationStatus == 0 {
+                    Task { @MainActor in
+                        let mp4Files = self.findDownloadedFiles(in: self.tempDirectory, matching: baseFilename)
+                        
+                        if let videoFile = mp4Files.first {
+                            print("✅ Video downloaded: \(videoFile.lastPathComponent)")
+                            
+                            // Check if we need to re-encode
+                            let videoProperties = await self.analyzeVideoProperties(videoFile)
+                            print("📊 Video info: \(videoProperties.qualityDescription), \(videoProperties.codec)")
+                            
+                            if self.isCodecCompatible(videoProperties.codec) {
+                                print("✅ Codec is compatible, no re-encoding needed")
+                                self.isDownloading = false
+                                self.downloadedVideoURL = videoFile
+                                continuation.resume(returning: videoFile)
+                            } else {
+                                print("🔄 Codec \(videoProperties.codec) is not compatible, re-encoding to H.264...")
+                                
+                                // Update UI to show re-encoding status
+                                progressCallback(0.0, "Converting to H.264 codec...")
+                                
+                                do {
+                                    let reEncodedURL = try await self.smartReEncodeToH264(
+                                        videoFile,
+                                        originalInfo: videoProperties,
+                                        progressCallback: progressCallback
+                                    )
+                                    
+                                    print("✅ Re-encoding completed successfully")
+                                    self.isDownloading = false
+                                    self.downloadedVideoURL = reEncodedURL
+                                    continuation.resume(returning: reEncodedURL)
+                                    
+                                } catch {
+                                    print("❌ Re-encoding failed: \(error)")
+                                    self.isDownloading = false
+                                    continuation.resume(throwing: error)
+                                }
+                            }
+                        } else {
+                            print("❌ Downloaded file not found")
+                            self.isDownloading = false
+                            continuation.resume(throwing: YouTubeError.fileNotFound)
+                        }
+                    }
+                } else {
+                    print("❌ Download failed with exit code: \(task.terminationStatus)")
+                    
+                    Task {
+                        let errorString = await errorCollector.getString()
+                        print("Error output: \(errorString)")
+                        
+                        Task { @MainActor in
+                            self.isDownloading = false
+                        }
+                        continuation.resume(throwing: YouTubeError.downloadFailed)
+                    }
                 }
             }
             
             do {
                 try task.run()
-                task.waitUntilExit()
-                
-                // Stop monitoring pipes
-                outputPipe.fileHandleForReading.readabilityHandler = nil
-                errorPipe.fileHandleForReading.readabilityHandler = nil
-                
-                DispatchQueue.main.async {
-                    self.isDownloading = false
-                    self.downloadProgress = 1.0
-                    progressCallback(1.0, "Download completed")
-                }
-                
-                if task.terminationStatus == 0 {
-                    let downloadedFile = self.findBestDownloadedFile(baseFilename: baseFilename, inDirectory: self.tempDirectory)
-                    
-                    if let fileURL = downloadedFile {
-                        print("✅ Download successful: \(fileURL.path)")
-                        
-                        // Verify codec and re-encode if needed
-                        Task {
-                            do {
-                                let videoInfo = try await self.getVideoProperties(at: fileURL)
-                                print("🎬 Downloaded video: \(videoInfo.qualityDescription), \(videoInfo.codec)")
-                                
-                                if self.isCodecCompatible(videoInfo.codec) {
-                                    await MainActor.run { self.downloadedVideoURL = fileURL }
-                                    continuation.resume(returning: fileURL)
-                                } else {
-                                    print("⚠️ Re-encoding \(videoInfo.codec) to H.264...")
-                                    
-                                    // ✅ OKAMŽITĚ ZOBRAZ "CONVERTING" PŘED SPUŠTĚNÍM FFMPEG
-                                    await MainActor.run {
-                                        progressCallback(0.5, "Converting to H.264 codec...")
-                                    }
-                                    
-                                    // ✅ MALÉ ZPOŽDĚNÍ ABY SE UI STIHLO PŘEKRESLIT
-                                    try await Task.sleep(for: .milliseconds(500))
-                                    
-                                    // Teď spusť encoding
-                                    do {
-                                        let reEncodedURL = try await self.smartReEncodeToH264(
-                                            fileURL,
-                                            originalInfo: videoInfo,
-                                            progressCallback: { _, _ in } // Prázdný callback během encoding
-                                        )
-                                        
-                                        // ✅ Po dokončení encoding zavolej callback s "completed"
-                                        await MainActor.run {
-                                            self.downloadedVideoURL = reEncodedURL
-                                            self.isDownloading = false
-                                            // ✅ Tento callback NERESETU isProcessing - jen updatuje message
-                                            progressCallback(1.0, "Video converted successfully!")
-                                        }
-                                        
-                                        continuation.resume(returning: reEncodedURL)
-                                        
-                                    } catch {
-                                        await MainActor.run {
-                                            self.isDownloading = false
-                                            progressCallback(0.0, "Conversion failed")
-                                        }
-                                        continuation.resume(throwing: error)
-                                    }
-                                }
-                            } catch {
-                                await MainActor.run {
-                                    self.isDownloading = false
-                                }
-                                continuation.resume(throwing: error)
-                            }
-                        }
-                    } else {
-                        print("❌ Downloaded file not found")
-                        continuation.resume(throwing: YouTubeError.fileNotFound)
-                    }
-                } else {
-                    print("❌ Download failed with exit code: \(task.terminationStatus)")
-                    continuation.resume(throwing: YouTubeError.downloadFailed)
-                }
-                
+                self.downloadTask = task
             } catch {
-                print("❌ Failed to start yt-dlp process: \(error)")
-                DispatchQueue.main.async { self.isDownloading = false }
+                print("❌ Failed to start download: \(error)")
+                Task { @MainActor in
+                    self.isDownloading = false
+                }
                 continuation.resume(throwing: error)
             }
         }
     }
     
-    func trimVideo(inputURL: URL, startTime: Double, endTime: Double, outputPath: URL) async throws {
+    func trimVideo(_ inputURL: URL, startTime: Double, endTime: Double, outputPath: URL) async throws {
+        print("✂️ Trimming video: \(startTime)s to \(endTime)s")
+        
+        // Check FFmpeg dependency
         let deps = dependenciesManager.checkDependencies()
         guard deps.ffmpeg else {
             throw YouTubeError.ffmpegNotFound
         }
         
         let duration = endTime - startTime
-        
-        print("✂️ Trimming video: \(startTime)s to \(endTime)s (\(duration)s)")
         
         let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
         guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
@@ -393,6 +400,282 @@ class YouTubeImportManager: ObservableObject {
         }
     }
     
+    func analyzeVideoProperties(_ videoURL: URL) async -> VideoProperties {
+        let asset = AVURLAsset(url: videoURL)
+        
+        do {
+            let duration = try await asset.load(.duration).seconds
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            
+            var resolution = CGSize.zero
+            var codec = "Unknown"
+            
+            if let videoTrack = videoTracks.first {
+                resolution = try await videoTrack.load(.naturalSize)
+                
+                // Get codec information
+                let formatDescriptions = try await videoTrack.load(.formatDescriptions)
+                if let formatDescription = formatDescriptions.first {
+                    let codecType = CMFormatDescriptionGetMediaSubType(formatDescription)
+                    codec = fourCharCodeToString(codecType)
+                }
+            }
+            
+            return VideoProperties(
+                duration: duration,
+                resolution: resolution,
+                videoTracks: videoTracks.count,
+                audioTracks: audioTracks.count,
+                codec: codec,
+                isPlayable: duration > 0 && !videoTracks.isEmpty
+            )
+        } catch {
+            print("❌ Error analyzing video properties: \(error)")
+            return VideoProperties(
+                duration: 0,
+                resolution: CGSize.zero,
+                videoTracks: 0,
+                audioTracks: 0,
+                codec: "Unknown",
+                isPlayable: false
+            )
+        }
+    }
+    
+    func isCodecCompatible(_ codec: String) -> Bool {
+        let compatibleCodecs = ["avc1", "h264", "mp4v"]
+        return compatibleCodecs.contains { compatibleCodec in
+            codec.lowercased().contains(compatibleCodec.lowercased())
+        }
+    }
+    
+    func smartReEncodeToH264(_ inputURL: URL, originalInfo: VideoProperties, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
+        let outputURL = tempDirectory.appendingPathComponent("h264_\(UUID().uuidString).mp4")
+        
+        print("🔄 Re-encoding started: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
+        
+        // Check FFmpeg dependency
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ffmpeg else {
+            throw YouTubeError.ffmpegNotFound
+        }
+        
+        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
+        guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            throw YouTubeError.ffmpegNotFound
+        }
+        
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffmpegPath)
+                
+                task.arguments = [
+                    "-i", inputURL.path,
+                    "-t", String(originalInfo.duration),
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "18",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-an",
+                    "-avoid_negative_ts", "make_zero",
+                    "-y",
+                    outputURL.path
+                ]
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                // Use actor-isolated data storage
+                let outputCollector = OutputCollector()
+                let errorCollector = OutputCollector()
+                
+                outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        let output = String(data: data, encoding: .utf8) ?? ""
+                        
+                        Task {
+                            await outputCollector.append(data)
+                        }
+                        
+                        // Only log progress lines for FFmpeg
+                        if output.contains("time=") || output.contains("frame=") {
+                            let lines = output.components(separatedBy: .newlines)
+                            for line in lines {
+                                if line.contains("time=") || line.contains("frame=") {
+                                    print("🔄 FFmpeg: \(line.trimmingCharacters(in: .whitespacesAndNewlines))")
+                                    break
+                                }
+                            }
+                        }
+                        
+                        DispatchQueue.main.async {
+                            self.parseFFmpegProgress(output, totalDuration: originalInfo.duration, progressCallback: progressCallback)
+                        }
+                    }
+                }
+                
+                errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        Task {
+                            await errorCollector.append(data)
+                        }
+                    }
+                }
+                
+                task.terminationHandler = { task in
+                    outputPipe.fileHandleForReading.readabilityHandler = nil
+                    errorPipe.fileHandleForReading.readabilityHandler = nil
+                    
+                    if task.terminationStatus == 0 {
+                        if FileManager.default.fileExists(atPath: outputURL.path) {
+                            print("✅ Re-encoding completed successfully")
+                            continuation.resume(returning: outputURL)
+                        } else {
+                            print("❌ Re-encoded file was not created")
+                            continuation.resume(throwing: YouTubeError.processingFailed)
+                        }
+                    } else {
+                        print("❌ Re-encoding failed with exit code: \(task.terminationStatus)")
+                        
+                        Task {
+                            let errorString = await errorCollector.getString()
+                            print("Error output: \(errorString)")
+                            continuation.resume(throwing: YouTubeError.processingFailed)
+                        }
+                    }
+                }
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                } catch {
+                    print("❌ Failed to start re-encoding: \(error)")
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func findDownloadedFiles(in directory: URL, matching pattern: String) -> [URL] {
+        do {
+            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            return files.filter { $0.lastPathComponent.contains(pattern) && $0.pathExtension == "mp4" }
+        } catch {
+            print("❌ Error reading directory: \(error)")
+            return []
+        }
+    }
+    
+    private func parseDownloadProgress(_ output: String, progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines {
+            if line.contains("[download]") && line.contains("%") {
+                let components = line.components(separatedBy: " ")
+                for component in components {
+                    if component.contains("%") {
+                        let percentString = component.replacingOccurrences(of: "%", with: "")
+                        if let percent = Double(percentString) {
+                            let progress = percent / 100.0
+                            
+                            // Only update if progress changed significantly or reached 100%
+                            if abs(progress - downloadProgress) > 0.01 || progress >= 1.0 {
+                                print("📊 Download progress: \(percent)%")
+                                
+                                DispatchQueue.main.async {
+                                    self.downloadProgress = progress
+                                    progressCallback(progress, "Downloading: \(Int(percent))%")
+                                }
+                            }
+                            break
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func parseFFmpegProgress(_ output: String, totalDuration: Double, progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // Try to parse time= format first
+            if line.contains("time=") {
+                let timePattern = "time=([0-9:]+\\.[0-9]+)"
+                if let regex = try? NSRegularExpression(pattern: timePattern, options: []) {
+                    let nsString = line as NSString
+                    let results = regex.matches(in: line, options: [], range: NSMakeRange(0, nsString.length))
+                    
+                    for match in results {
+                        let timeString = nsString.substring(with: match.range(at: 1))
+                        if let timeSeconds = parseTimeToSeconds(timeString) {
+                            let progress = min(timeSeconds / totalDuration, 1.0)
+                            
+                            // Always update progress for FFmpeg (it's slower than download)
+                            print("🔄 FFmpeg progress: \(Int(progress * 100))% (\(timeString) of \(Int(totalDuration))s)")
+                            
+                            DispatchQueue.main.async {
+                                progressCallback(progress, "Converting to H.264: \(Int(progress * 100))%")
+                            }
+                        }
+                    }
+                }
+            }
+            // Also try frame= format as fallback
+            else if line.contains("frame=") && line.contains("time=") {
+                // This is a more detailed FFmpeg output line
+                let components = line.components(separatedBy: " ").filter { !$0.isEmpty }
+                for component in components {
+                    if component.hasPrefix("time=") {
+                        let timeString = String(component.dropFirst(5)) // Remove "time="
+                        if let timeSeconds = parseTimeToSeconds(timeString) {
+                            let progress = min(timeSeconds / totalDuration, 1.0)
+                            
+                            print("🔄 FFmpeg progress: \(Int(progress * 100))% (\(timeString) of \(Int(totalDuration))s)")
+                            
+                            DispatchQueue.main.async {
+                                progressCallback(progress, "Converting to H.264: \(Int(progress * 100))%")
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+        }
+    }
+    
+    private func parseTimeToSeconds(_ timeString: String) -> Double? {
+        let components = timeString.components(separatedBy: ":")
+        guard components.count == 3 else { return nil }
+        
+        guard let hours = Double(components[0]),
+              let minutes = Double(components[1]),
+              let seconds = Double(components[2]) else { return nil }
+        
+        return hours * 3600 + minutes * 60 + seconds
+    }
+    
+    private func fourCharCodeToString(_ fourCharCode: FourCharCode) -> String {
+        let bytes = [
+            UInt8((fourCharCode >> 24) & 0xFF),
+            UInt8((fourCharCode >> 16) & 0xFF),
+            UInt8((fourCharCode >> 8) & 0xFF),
+            UInt8(fourCharCode & 0xFF)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "Unknown"
+    }
+    
+    // MARK: - Control Methods
+    
     func cancelDownload() {
         downloadTask?.terminate()
         downloadTask = nil
@@ -405,287 +688,13 @@ class YouTubeImportManager: ObservableObject {
         cleanup()
     }
     
-    
     func cleanup() {
         if let videoURL = downloadedVideoURL {
             try? FileManager.default.removeItem(at: videoURL)
         }
         downloadedVideoURL = nil
-        videoInfo = nil
-        selectedStartTime = 0.0
-        selectedEndTime = 30.0
         downloadProgress = 0.0
         statusMessage = ""
-    }
-    
-    // MARK: - Progress Parsing (nonisolated)
-    
-    nonisolated func parseDownloadProgress(_ output: String, progressCallback: @escaping (Double, String) -> Void) {
-        let lines = output.components(separatedBy: .newlines)
-        
-        for line in lines {
-            if line.contains("[download]") && line.contains("%") {
-                let components = line.components(separatedBy: " ").filter { !$0.isEmpty }
-                for component in components {
-                    if component.hasSuffix("%") {
-                        if let percentString = component.dropLast().split(separator: ".").first,
-                           let percent = Double(percentString) {
-                            let progress = percent / 100.0
-                            
-                            Task { @MainActor in
-                                self.downloadProgress = progress
-                                progressCallback(progress, "Downloading video... \(Int(percent))%")
-                            }
-                            break
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    nonisolated func parseFFmpegProgress(_ output: String, totalDuration: Double, progressCallback: @escaping (Double, String) -> Void) {
-        let lines = output.components(separatedBy: .newlines)
-        
-        for line in lines {
-            if line.hasPrefix("out_time_ms=") {
-                let timeString = String(line.dropFirst("out_time_ms=".count))
-                if let microseconds = Double(timeString) {
-                    let currentSeconds = microseconds / 1_000_000.0
-                    let progress = min(currentSeconds / totalDuration, 1.0)
-                    let percentage = Int(progress * 100)
-                    
-                    Task { @MainActor in
-                        self.downloadProgress = progress
-                        // ✅ VYLEPŠENÁ ZPRÁVA:
-                        progressCallback(progress, "Converting to H.264 codec... \(percentage)%")
-                    }
-                }
-                break
-            } else if line.hasPrefix("time=") {
-                // Fallback: parse time=00:00:10.50 format
-                let timeString = String(line.dropFirst("time=".count)).components(separatedBy: " ").first ?? ""
-                if let timeComponents = parseTimeString(timeString) {
-                    let currentSeconds = timeComponents
-                    let progress = min(currentSeconds / totalDuration, 1.0)
-                    let percentage = Int(progress * 100)
-                    
-                    Task { @MainActor in
-                        self.downloadProgress = progress
-                        // ✅ VYLEPŠENÁ ZPRÁVA:
-                        progressCallback(progress, "Converting to H.264 codec... \(percentage)%")
-                    }
-                }
-                break
-            }
-        }
-    }
-
-    nonisolated func parseTimeString(_ timeString: String) -> Double? {
-        // Parse format: "00:01:23.45"
-        let components = timeString.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: ":")
-        guard components.count == 3 else { return nil }
-        
-        guard let hours = Double(components[0]),
-              let minutes = Double(components[1]),
-              let seconds = Double(components[2]) else { return nil }
-        
-        return hours * 3600 + minutes * 60 + seconds
-    }
-    
-}
-
-// MARK: - Private Methods
-
-private extension YouTubeImportManager {
-    
-    func findBestDownloadedFile(baseFilename: String, inDirectory directory: URL) -> URL? {
-        do {
-            let allFiles = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            let matchingFiles = allFiles.filter { $0.hasPrefix(baseFilename) }
-            
-            guard !matchingFiles.isEmpty else { return nil }
-            
-            // Priority: merged MP4 > video MP4 > any video format
-            var bestFile: String?
-            var bestPriority = Int.max
-            
-            for filename in matchingFiles {
-                let priority = getFilePriority(filename)
-                if priority < bestPriority {
-                    bestPriority = priority
-                    bestFile = filename
-                }
-            }
-            
-            if let selectedFile = bestFile {
-                let fileURL = directory.appendingPathComponent(selectedFile)
-                
-                let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-                if let fileSize = attributes[.size] as? Int64, fileSize > 1000 {
-                    return fileURL
-                }
-            }
-            
-            return nil
-        } catch {
-            print("❌ Error finding downloaded file: \(error)")
-            return nil
-        }
-    }
-    
-    func getFilePriority(_ filename: String) -> Int {
-        let lowercaseFilename = filename.lowercased()
-        
-        // Audio-only formats - avoid
-        if lowercaseFilename.contains(".webm") && lowercaseFilename.contains("f251") {
-            return 1000
-        }
-        if lowercaseFilename.hasSuffix(".m4a") || lowercaseFilename.hasSuffix(".opus") {
-            return 999
-        }
-        
-        // Merged video files - best
-        if lowercaseFilename.hasSuffix(".mp4") && !lowercaseFilename.contains(".f") {
-            return 1
-        }
-        
-        // Video MP4 files with format codes
-        if lowercaseFilename.hasSuffix(".mp4") {
-            return 2
-        }
-        
-        // Other video formats
-        if lowercaseFilename.hasSuffix(".mov") || lowercaseFilename.hasSuffix(".mkv") {
-            return 10
-        }
-        
-        return 50
-    }
-    
-    func getVideoProperties(at url: URL) async throws -> VideoProperties {
-        let asset = AVAsset(url: url)
-        
-        let duration = try await asset.load(.duration)
-        let tracks = try await asset.load(.tracks)
-        
-        let videoDuration = CMTimeGetSeconds(duration)
-        let videoTracks = tracks.filter { $0.mediaType == .video }
-        let audioTracks = tracks.filter { $0.mediaType == .audio }
-        
-        var resolution = CGSize.zero
-        var codec = "Unknown"
-        
-        if let videoTrack = videoTracks.first {
-            let naturalSize = try await videoTrack.load(.naturalSize)
-            resolution = naturalSize
-            
-            let formatDescriptions = videoTrack.formatDescriptions
-            for description in formatDescriptions {
-                let formatDescription = description as! CMVideoFormatDescription
-                let codecType = CMFormatDescriptionGetMediaSubType(formatDescription)
-                codec = fourCharCodeToString(codecType)
-                break
-            }
-        }
-        
-        return VideoProperties(
-            duration: videoDuration,
-            resolution: resolution,
-            videoTracks: videoTracks.count,
-            audioTracks: audioTracks.count,
-            codec: codec,
-            isPlayable: videoDuration > 0 && !videoTracks.isEmpty
-        )
-    }
-    
-    func isCodecCompatible(_ codec: String) -> Bool {
-        let compatibleCodecs = ["avc1", "h264", "mp4v", "hvc1", "hev1"]
-        return compatibleCodecs.contains { compatibleCodec in
-            codec.lowercased().contains(compatibleCodec.lowercased())
-        }
-    }
-    
-    // V YouTubeImportManager.swift - aktualizujte začátek smartReEncodeToH264:
-
-    func smartReEncodeToH264(_ inputURL: URL, originalInfo: VideoProperties, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
-        let outputURL = tempDirectory.appendingPathComponent("h264_\(UUID().uuidString).mp4")
-        
-        print("🔄 Re-encoding started: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
-        
-        let deps = dependenciesManager.checkDependencies()
-        guard deps.ffmpeg else {
-            throw YouTubeError.ffmpegNotFound
-        }
-        
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-            throw YouTubeError.ffmpegNotFound
-        }
-        
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            // ✅ SPUSŤ FFMPEG NA BACKGROUND QUEUE
-            Task.detached {
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: ffmpegPath)
-                
-                task.arguments = [
-                    "-i", inputURL.path,
-                    "-t", String(originalInfo.duration),
-                    "-c:v", "libx264",
-                    "-preset", "medium",
-                    "-crf", "18",
-                    "-profile:v", "high",
-                    "-level:v", "5.1",
-                    "-pix_fmt", "yuv420p",
-                    "-vf", "scale=\(Int(originalInfo.resolution.width)):\(Int(originalInfo.resolution.height))",
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    "-avoid_negative_ts", "make_zero",
-                    "-y",
-                    outputURL.path
-                ]
-                
-                // ✅ ŽÁDNÉ PIPES - jen jednoduché spuštění
-                do {
-                    try task.run()
-                    task.waitUntilExit() // Toto běží na background thread, takže neblokuje UI
-                    
-                    if task.terminationStatus == 0 {
-                        if FileManager.default.fileExists(atPath: outputURL.path) {
-                            let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
-                            if let fileSize = attributes[.size] as? Int64, fileSize > 1000 {
-                                print("✅ Re-encoding completed successfully")
-                                
-                                // Clean up original file
-                                try? FileManager.default.removeItem(at: inputURL)
-                                
-                                continuation.resume(returning: outputURL)
-                                return
-                            }
-                        }
-                    }
-                    
-                    print("❌ Re-encoding failed with exit code: \(task.terminationStatus)")
-                    continuation.resume(throwing: YouTubeError.processingFailed)
-                    
-                } catch {
-                    print("❌ Failed to start re-encoding: \(error)")
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-    
-    func fourCharCodeToString(_ code: FourCharCode) -> String {
-        let bytes: [UInt8] = [
-            UInt8((code >> 24) & 0xFF),
-            UInt8((code >> 16) & 0xFF),
-            UInt8((code >> 8) & 0xFF),
-            UInt8(code & 0xFF)
-        ]
-        return String(bytes: bytes, encoding: .ascii) ?? "Unknown"
     }
 }
 
@@ -713,9 +722,27 @@ enum YouTubeError: LocalizedError {
         case .processingFailed:
             return "Video processing failed"
         case .ytDlpNotFound:
-            return "yt-dlp not installed. Please install via: brew install yt-dlp"
+            return "yt-dlp not installed. Please install dependencies first."
         case .ffmpegNotFound:
-            return "FFmpeg not installed. Please install via: brew install ffmpeg"
+            return "FFmpeg not installed. Please install dependencies first."
         }
+    }
+}
+
+// MARK: - Swift 6 Sendable Actor for Thread-Safe Data Collection
+
+actor OutputCollector {
+    private var data = Data()
+    
+    func append(_ newData: Data) {
+        data.append(newData)
+    }
+    
+    func getString() -> String {
+        return String(data: data, encoding: .utf8) ?? "Unknown error"
+    }
+    
+    func clear() {
+        data.removeAll()
     }
 }

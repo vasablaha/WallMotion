@@ -219,7 +219,7 @@ struct YouTubeImportView: View {
         Task {
             do {
                 try await importManager.trimVideo(
-                    inputURL: inputURL,
+                    inputURL,
                     startTime: importManager.selectedStartTime,
                     endTime: importManager.selectedEndTime,
                     outputPath: outputURL
