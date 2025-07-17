@@ -97,14 +97,21 @@ class DeviceManager: ObservableObject {
     private func getMacAddress() -> String? {
         var macAddress: String?
         
-        // Get MAC address of en0 (primary network interface)
         let task = Process()
-        task.launchPath = "/sbin/ifconfig"
+        // ✅ OPRAVA: Use executableURL
+        task.executableURL = URL(fileURLWithPath: "/sbin/ifconfig")
         task.arguments = ["en0"]
         
         let pipe = Pipe()
         task.standardOutput = pipe
-        task.launch()
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            print("❌ Failed to get MAC address: \(error)")
+            return nil
+        }
         
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         if let output = String(data: data, encoding: .utf8) {
@@ -141,12 +148,20 @@ class DeviceManager: ObservableObject {
     
     func getMacModel() -> String? {
         let task = Process()
-        task.launchPath = "/usr/sbin/sysctl"
+        // ✅ OPRAVA: Use executableURL
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/sysctl")
         task.arguments = ["-n", "hw.model"]
         
         let pipe = Pipe()
         task.standardOutput = pipe
-        task.launch()
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            print("❌ Failed to get Mac model: \(error)")
+            return nil
+        }
         
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)

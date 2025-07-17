@@ -151,8 +151,15 @@ class VideoSaverAgent {
     
     private func runShellCommand(_ command: String, arguments: [String]) {
         let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = [command] + arguments
+        
+        // ✅ OPRAVA: Use executableURL
+        if command.hasPrefix("/") {
+            task.executableURL = URL(fileURLWithPath: command)
+            task.arguments = arguments
+        } else {
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            task.arguments = [command] + arguments
+        }
         
         do {
             try task.run()

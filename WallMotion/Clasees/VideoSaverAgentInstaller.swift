@@ -184,8 +184,17 @@ class VideoSaverAgentInstaller {
     
     private func runShellCommand(_ command: String, arguments: [String]) -> String {
         let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = [command] + arguments
+        
+        // ✅ OPRAVA: Use executableURL instead of deprecated launchPath
+        if command.hasPrefix("/") {
+            // Absolute path
+            task.executableURL = URL(fileURLWithPath: command)
+            task.arguments = arguments
+        } else {
+            // Command in PATH - use /usr/bin/env
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            task.arguments = [command] + arguments
+        }
         
         let pipe = Pipe()
         task.standardOutput = pipe

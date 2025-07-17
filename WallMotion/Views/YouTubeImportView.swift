@@ -44,9 +44,7 @@ struct YouTubeImportView: View {
                         isFetchingVideoInfo: isFetchingVideoInfo
                     )
                 } else {
-                    WorkingVideoPreview(
-                        videoURL: (importManager.downloadedVideoURL)!
-                        )
+                    YouTubeVideoPreviewSection(videoURL: importManager.downloadedVideoURL!)
                 }
                 
                 if showingVideoInfo {
@@ -243,11 +241,4 @@ struct YouTubeImportView: View {
             isFetchingVideoInfo = false
         }
     }
-}
-
-#Preview {
-    YouTubeImportView { url in
-        print("Video ready: \(url)")
-    }
-    .frame(width: 500, height: 700)
 }

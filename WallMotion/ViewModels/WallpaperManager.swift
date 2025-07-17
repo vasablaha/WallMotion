@@ -189,8 +189,17 @@ class WallpaperManager: ObservableObject {
     // MARK: - Shell execution helper
     func runShell(_ command: String, _ arguments: [String]) -> String {
         let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = [command] + arguments
+        
+        // ✅ OPRAVA: Use executableURL instead of deprecated launchPath
+        if command.hasPrefix("/") {
+            // Absolute path
+            task.executableURL = URL(fileURLWithPath: command)
+            task.arguments = arguments
+        } else {
+            // Command in PATH - use /usr/bin/env
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            task.arguments = [command] + arguments
+        }
 
         let pipe = Pipe()
         task.standardOutput = pipe
@@ -198,6 +207,7 @@ class WallpaperManager: ObservableObject {
 
         do {
             try task.run()
+            task.waitUntilExit()
         } catch {
             return "Failed to run \(command): \(error)"
         }
@@ -205,7 +215,6 @@ class WallpaperManager: ObservableObject {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
     }
-
     // MARK: - AppleScript batch
     private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
         await MainActor.run { progressCallback(0.5, "Cleaning and installing wallpaper...") }
