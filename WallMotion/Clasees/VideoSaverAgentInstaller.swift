@@ -1,14 +1,15 @@
-// VideoSaverAgentInstaller.swift - Launch Agent verze
+// VideoSaverAgentInstaller.swift - Kompletní async oprava
 
 import Foundation
 import Cocoa
 
 class VideoSaverAgentInstaller {
     private let launchAgentsPath = "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/LaunchAgents"
-    private let plistName = "com.wallmotion.videosaver.plist"  // ✅ ZMĚNĚNO
+    private let plistName = "com.wallmotion.videosaver.plist"
     private let agentName = "VideoSaver"
     
-    func installVideoSaverAgent() -> Bool {
+    // ✅ ZMĚNĚNO NA ASYNC
+    func installVideoSaverAgent() async -> Bool {
         print("🚀 Installing VideoSaverAgent...")
         
         // 1. Vytvoř LaunchAgents adresář
@@ -68,7 +69,7 @@ class VideoSaverAgentInstaller {
         }
         
         // 5. Load launch agent
-        if !loadLaunchAgent() {
+        if !(await loadLaunchAgent()) {
             return false
         }
         
@@ -129,28 +130,30 @@ class VideoSaverAgentInstaller {
         }
     }
     
-    private func loadLaunchAgent() -> Bool {
+    // ✅ ZMĚNĚNO NA ASYNC
+    private func loadLaunchAgent() async -> Bool {
         let plistPath = "\(launchAgentsPath)/\(plistName)"
         
         // Unload pokud už běží
-        _ = runShellCommand("launchctl", arguments: ["unload", plistPath])
+        _ = await runShellCommand("launchctl", arguments: ["unload", plistPath])
         
         // Load nový agent
-        let result = runShellCommand("launchctl", arguments: ["load", plistPath])
+        let result = await runShellCommand("launchctl", arguments: ["load", plistPath])
         if result.contains("error") || result.contains("failed") {
             print("❌ Failed to load launch agent: \(result)")
             return false
         }
         
         // Spusť agent hned
-        _ = runShellCommand("launchctl", arguments: ["start", "com.wallmotion.videosaver"])  // ✅ ZMĚNĚNO
+        _ = await runShellCommand("launchctl", arguments: ["start", "com.wallmotion.videosaver"])
         
         print("✅ Launch agent loaded and started")
         return true
     }
     
-    func isVideoSaverAgentRunning() -> Bool {
-        let result = runShellCommand("launchctl", arguments: ["list", "com.wallmotion.videosaver"])  // ✅ ZMĚNĚNO
+    // ✅ ZMĚNĚNO NA ASYNC
+    func isVideoSaverAgentRunning() async -> Bool {
+        let result = await runShellCommand("launchctl", arguments: ["list", "com.wallmotion.videosaver"])
         let isRunning = !result.contains("Could not find service")
         
         if isRunning {
@@ -162,14 +165,15 @@ class VideoSaverAgentInstaller {
         return isRunning
     }
     
-    func uninstallVideoSaverAgent() -> Bool {
+    // ✅ ZMĚNĚNO NA ASYNC
+    func uninstallVideoSaverAgent() async -> Bool {
         let plistPath = "\(launchAgentsPath)/\(plistName)"
         
         // Stop agent
-        _ = runShellCommand("launchctl", arguments: ["stop", "com.wallmotion.videosaver"])  // ✅ ZMĚNĚNO
+        _ = await runShellCommand("launchctl", arguments: ["stop", "com.wallmotion.videosaver"])
         
         // Unload agent
-        _ = runShellCommand("launchctl", arguments: ["unload", plistPath])
+        _ = await runShellCommand("launchctl", arguments: ["unload", plistPath])
         
         // Smaž plist
         do {
@@ -182,32 +186,36 @@ class VideoSaverAgentInstaller {
         }
     }
     
-    private func runShellCommand(_ command: String, arguments: [String]) -> String {
-        let task = Process()
-        
-        // ✅ OPRAVA: Use executableURL instead of deprecated launchPath
-        if command.hasPrefix("/") {
-            // Absolute path
-            task.executableURL = URL(fileURLWithPath: command)
-            task.arguments = arguments
-        } else {
-            // Command in PATH - use /usr/bin/env
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            task.arguments = [command] + arguments
+    // ✅ ASYNC VERZE runShellCommand
+    private func runShellCommand(_ command: String, arguments: [String]) async -> String {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                
+                if command.hasPrefix("/") {
+                    task.executableURL = URL(fileURLWithPath: command)
+                    task.arguments = arguments
+                } else {
+                    task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                    task.arguments = [command] + arguments
+                }
+                
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()  // ✅ Teď je na background thread
+                    
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let result = String(data: data, encoding: .utf8) ?? ""
+                    
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(returning: "Failed to run \(command): \(error)")
+                }
+            }
         }
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return "Failed to run \(command): \(error)"
-        }
-        
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
     }
 }

@@ -1,17 +1,4 @@
-//
-//  VideoSaverManager.swift
-//  WallMotion
-//
-//  Created by Šimon Filípek on 16.07.2025.
-//
-
-
-//
-//  VideoSaverManager.swift
-//  WallMotion
-//
-//  Manages VideoSaverAgent functionality
-//
+// VideoSaverManager.swift - async oprava
 
 import Foundation
 import SwiftUI
@@ -169,31 +156,36 @@ class VideoSaverManager: ObservableObject {
         checkVideoSaverStatus()
     }
     
+    // ✅ ZMĚNĚNO NA ASYNC
     private func checkVideoSaverStatus() {
-        isVideoSaverInstalled = videoSaverInstaller.isVideoSaverAgentRunning()
-        
-        // Pokud je agent zapnutý v nastavení ale neběží, zkus ho spustit
-        if isVideoSaverEnabled && !isVideoSaverInstalled {
-            print("🔄 VideoSaver enabled but not running - starting...")
+        Task {
+            let isRunning = await videoSaverInstaller.isVideoSaverAgentRunning()
             
-            Task {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-                await MainActor.run {
-                    self.handleVideoSaverToggle(true)
+            await MainActor.run {
+                self.isVideoSaverInstalled = isRunning
+                
+                // Pokud je agent zapnutý v nastavení ale neběží, zkus ho spustit
+                if self.isVideoSaverEnabled && !self.isVideoSaverInstalled {
+                    print("🔄 VideoSaver enabled but not running - starting...")
+                    
+                    Task {
+                        try await Task.sleep(nanoseconds: 1_000_000_000)
+                        await MainActor.run {
+                            self.handleVideoSaverToggle(true)
+                        }
+                    }
                 }
             }
         }
     }
     
+    // ✅ ZMĚNĚNO NA ASYNC
     private func installAndStartVideoSaverAgent() async -> Bool {
-        return await Task.detached {
-            return self.videoSaverInstaller.installVideoSaverAgent()
-        }.value
+        return await videoSaverInstaller.installVideoSaverAgent()
     }
     
+    // ✅ ZMĚNĚNO NA ASYNC
     private func stopAndUninstallVideoSaverAgent() async -> Bool {
-        return await Task.detached {
-            return self.videoSaverInstaller.uninstallVideoSaverAgent()
-        }.value
+        return await videoSaverInstaller.uninstallVideoSaverAgent()
     }
 }

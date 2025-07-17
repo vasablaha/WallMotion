@@ -772,8 +772,7 @@ struct ContentView: View {
     private func checkForFirstTimeTutorial() {
         let hasSeenTutorial = UserDefaults.standard.bool(forKey: hasSeenTutorialKey)
         if !hasSeenTutorial {
-            // Show tutorial after a short delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            Task { @MainActor in
                 showingFirstTimeTutorial = true
             }
         }
