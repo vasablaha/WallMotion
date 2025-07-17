@@ -21,6 +21,9 @@ class YouTubeImportManager: ObservableObject {
     @Published var selectedEndTime: Double = 30.0
     @Published var maxDuration: Double = 300.0 // 5 minutes max for wallpaper
     
+    @Published var dependenciesManager = DependenciesManager()
+
+    
     // MARK: - Properties
     let tempDirectory = FileManager.default.temporaryDirectory
     private var downloadTask: Process?
@@ -61,6 +64,17 @@ class YouTubeImportManager: ObservableObject {
         }
     }
     
+    // MARK: - Convenience Methods for Dependencies
+    
+    func checkDependencies() -> (ytdlp: Bool, ffmpeg: Bool) {
+        let status = dependenciesManager.checkDependencies()
+        return (ytdlp: status.ytdlp, ffmpeg: status.ffmpeg)
+    }
+    
+    func installationInstructions() -> String {
+        return dependenciesManager.getInstallationInstructions()
+    }
+    
     // MARK: - Public Methods
     
     func validateYouTubeURL(_ urlString: String) -> Bool {
@@ -84,10 +98,14 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.invalidURL
         }
         
-        // Check if yt-dlp exists
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ytdlp else {
+            print("❌ yt-dlp not found")
+            throw YouTubeError.ytDlpNotFound
+        }
+
         let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
         guard let ytdlpPath = ytdlpPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-            print("❌ yt-dlp not found in any of these paths: \(ytdlpPaths)")
             throw YouTubeError.ytDlpNotFound
         }
         
@@ -103,7 +121,6 @@ class YouTubeImportManager: ObservableObject {
                 "--no-warnings",
                 urlString
             ]
-            
             let outputPipe = Pipe()
             let errorPipe = Pipe()
             task.standardOutput = outputPipe
@@ -157,6 +174,12 @@ class YouTubeImportManager: ObservableObject {
     
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         print("🎥 Starting YouTube download process...")
+        
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ytdlp else {
+            throw YouTubeError.ytDlpNotFound
+        }
+
 
         isDownloading = true
         downloadProgress = 0.0
@@ -309,6 +332,11 @@ class YouTubeImportManager: ObservableObject {
     }
     
     func trimVideo(inputURL: URL, startTime: Double, endTime: Double, outputPath: URL) async throws {
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ffmpeg else {
+            throw YouTubeError.ffmpegNotFound
+        }
+        
         let duration = endTime - startTime
         
         print("✂️ Trimming video: \(startTime)s to \(endTime)s (\(duration)s)")
@@ -377,45 +405,6 @@ class YouTubeImportManager: ObservableObject {
         cleanup()
     }
     
-    func checkDependencies() -> (ytdlp: Bool, ffmpeg: Bool) {
-        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
-        let ytdlpExists = ytdlpPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        let ffmpegExists = ffmpegPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        return (ytdlp: ytdlpExists, ffmpeg: ffmpegExists)
-    }
-    
-    func installationInstructions() -> String {
-        let deps = checkDependencies()
-        var instructions: [String] = []
-        
-        if !deps.ytdlp {
-            instructions.append("brew install yt-dlp")
-        }
-        
-        if !deps.ffmpeg {
-            instructions.append("brew install ffmpeg")
-        }
-        
-        if instructions.isEmpty {
-            return "All dependencies are installed! ✅"
-        } else {
-            var message = "Please install missing dependencies:\n\n"
-            message += instructions.joined(separator: "\n")
-            
-            if !deps.ffmpeg {
-                message += "\n\nNote: FFmpeg is optional but recommended for:"
-                message += "\n• Thumbnail conversion"
-                message += "\n• Metadata embedding"
-                message += "\n• Advanced video processing"
-                message += "\n\nBasic video download will work without FFmpeg."
-            }
-            
-            return message
-        }
-    }
     
     func cleanup() {
         if let videoURL = downloadedVideoURL {
@@ -623,6 +612,11 @@ private extension YouTubeImportManager {
         let outputURL = tempDirectory.appendingPathComponent("h264_\(UUID().uuidString).mp4")
         
         print("🔄 Re-encoding started: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
+        
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ffmpeg else {
+            throw YouTubeError.ffmpegNotFound
+        }
         
         let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
         guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
