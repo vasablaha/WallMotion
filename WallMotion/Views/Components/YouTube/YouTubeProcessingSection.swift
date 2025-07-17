@@ -14,10 +14,18 @@ struct YouTubeProcessingSection: View {
     var body: some View {
         VStack(spacing: 16) {
             // Progress bar s animací
-            ProgressView(value: progress)
-                .progressViewStyle(LinearProgressViewStyle())
-                .frame(maxWidth: .infinity)
-                .animation(.easeInOut(duration: 0.3), value: progress)
+            if message.contains("Converting") && !message.contains("completed") {
+                // Indeterminate progress bar during conversion
+                ProgressView()
+                    .progressViewStyle(LinearProgressViewStyle())
+                    .frame(maxWidth: .infinity)
+            } else {
+                // Normal progress bar for download/completed
+                ProgressView(value: progress)
+                    .progressViewStyle(LinearProgressViewStyle())
+                    .frame(maxWidth: .infinity)
+                    .animation(.easeInOut(duration: 0.3), value: progress)
+            }
             
             // Status message s ikonami pro různé fáze
             HStack(spacing: 8) {
@@ -27,10 +35,10 @@ struct YouTubeProcessingSection: View {
                         Image(systemName: "arrow.down.circle.fill")
                             .foregroundColor(.blue)
                     } else if message.contains("Converting") || message.contains("H.264") {
-                        Image(systemName: "gearshape.2.fill")
-                            .foregroundColor(.orange)
-                            .rotationEffect(.degrees(progress > 0 ? 360 : 0))
-                            .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: progress > 0)
+                        // ✅ SPINNER PRO CONVERTING místo rotující ikony
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .frame(width: 16, height: 16)
                     } else if message.contains("completed") || message.contains("successful") {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
@@ -51,10 +59,13 @@ struct YouTubeProcessingSection: View {
                 
                 Spacer()
                 
-                Text("\(Int(progress * 100))%")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
+                // Zobraz procenta pouze pokud není converting (bez completed)
+                if !message.contains("Converting") || message.contains("completed") {
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                }
             }
             
             // Detailní informace pro uživatele
@@ -108,3 +119,4 @@ struct YouTubeProcessingSection: View {
         }
     }
 }
+

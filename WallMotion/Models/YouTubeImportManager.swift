@@ -157,7 +157,7 @@ class YouTubeImportManager: ObservableObject {
     
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         print("🎥 Starting YouTube download process...")
-        
+
         isDownloading = true
         downloadProgress = 0.0
         
@@ -250,24 +250,39 @@ class YouTubeImportManager: ObservableObject {
                                 } else {
                                     print("⚠️ Re-encoding \(videoInfo.codec) to H.264...")
                                     
-                                    // Start re-encoding with progress
+                                    // ✅ OKAMŽITĚ ZOBRAZ "CONVERTING" PŘED SPUŠTĚNÍM FFMPEG
                                     await MainActor.run {
-                                        self.isDownloading = true // Keep progress bar visible
-                                        progressCallback(0.0, "Converting to H.264 codec for macOS compatibility...")
+                                        progressCallback(0.5, "Converting to H.264 codec...")
                                     }
                                     
-                                    let reEncodedURL = try await self.smartReEncodeToH264(
-                                        fileURL,
-                                        originalInfo: videoInfo,
-                                        progressCallback: progressCallback
-                                    )
+                                    // ✅ MALÉ ZPOŽDĚNÍ ABY SE UI STIHLO PŘEKRESLIT
+                                    try await Task.sleep(for: .milliseconds(500))
                                     
-                                    await MainActor.run {
-                                        self.downloadedVideoURL = reEncodedURL
-                                        self.isDownloading = false
-                                        progressCallback(1.0, "Video converted successfully!")
+                                    // Teď spusť encoding
+                                    do {
+                                        let reEncodedURL = try await self.smartReEncodeToH264(
+                                            fileURL,
+                                            originalInfo: videoInfo,
+                                            progressCallback: { _, _ in } // Prázdný callback během encoding
+                                        )
+                                        
+                                        // ✅ Po dokončení encoding zavolej callback s "completed"
+                                        await MainActor.run {
+                                            self.downloadedVideoURL = reEncodedURL
+                                            self.isDownloading = false
+                                            // ✅ Tento callback NERESETU isProcessing - jen updatuje message
+                                            progressCallback(1.0, "Video converted successfully!")
+                                        }
+                                        
+                                        continuation.resume(returning: reEncodedURL)
+                                        
+                                    } catch {
+                                        await MainActor.run {
+                                            self.isDownloading = false
+                                            progressCallback(0.0, "Conversion failed")
+                                        }
+                                        continuation.resume(throwing: error)
                                     }
-                                    continuation.resume(returning: reEncodedURL)
                                 }
                             } catch {
                                 await MainActor.run {
@@ -607,10 +622,7 @@ private extension YouTubeImportManager {
     func smartReEncodeToH264(_ inputURL: URL, originalInfo: VideoProperties, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         let outputURL = tempDirectory.appendingPathComponent("h264_\(UUID().uuidString).mp4")
         
-        print("🔄 Re-encoding to H.264: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
-        
-        // ✅ POČÁTEČNÍ ZPRÁVA PRO UŽIVATELE:
-        progressCallback(0.0, "Preparing video conversion to H.264...")
+        print("🔄 Re-encoding started: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
         
         let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
         guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
@@ -618,87 +630,56 @@ private extension YouTubeImportManager {
         }
         
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: ffmpegPath)
-            
-            task.arguments = [
-                "-i", inputURL.path,
-                "-t", String(originalInfo.duration),
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "18",
-                "-profile:v", "high",
-                "-level:v", "5.1",
-                "-pix_fmt", "yuv420p",
-                "-vf", "scale=\(Int(originalInfo.resolution.width)):\(Int(originalInfo.resolution.height))",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-movflags", "+faststart",
-                "-avoid_negative_ts", "make_zero",
-                "-progress", "pipe:1",
-                "-y",
-                outputURL.path
-            ]
-            
-            let outputPipe = Pipe()
-            let errorPipe = Pipe()
-            task.standardOutput = outputPipe
-            task.standardError = errorPipe
-            
-            var allOutput = ""
-            var allErrors = ""
-            
-            // ✅ OZNAM O ZAČÁTKU KONVERZE:
-            progressCallback(0.01, "Starting H.264 conversion...")
-            
-            // Monitor stdout for FFmpeg progress
-            outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allOutput += output
+            // ✅ SPUSŤ FFMPEG NA BACKGROUND QUEUE
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffmpegPath)
+                
+                task.arguments = [
+                    "-i", inputURL.path,
+                    "-t", String(originalInfo.duration),
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "18",
+                    "-profile:v", "high",
+                    "-level:v", "5.1",
+                    "-pix_fmt", "yuv420p",
+                    "-vf", "scale=\(Int(originalInfo.resolution.width)):\(Int(originalInfo.resolution.height))",
+                    "-c:a", "aac",
+                    "-b:a", "128k",
+                    "-movflags", "+faststart",
+                    "-avoid_negative_ts", "make_zero",
+                    "-y",
+                    outputURL.path
+                ]
+                
+                // ✅ ŽÁDNÉ PIPES - jen jednoduché spuštění
+                do {
+                    try task.run()
+                    task.waitUntilExit() // Toto běží na background thread, takže neblokuje UI
                     
-                    // Parse FFmpeg progress s aktualizovanými zprávami
-                    self.parseFFmpegProgress(output, totalDuration: originalInfo.duration, progressCallback: progressCallback)
-                }
-            }
-            
-            // Zbytek kódu zůstává stejný...
-            
-            do {
-                try task.run()
-                task.waitUntilExit()
-                
-                // Stop monitoring pipes
-                outputPipe.fileHandleForReading.readabilityHandler = nil
-                errorPipe.fileHandleForReading.readabilityHandler = nil
-                
-                if task.terminationStatus == 0 {
-                    if FileManager.default.fileExists(atPath: outputURL.path) {
-                        let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
-                        if let fileSize = attributes[.size] as? Int64, fileSize > 1000 {
-                            print("✅ Re-encoding successful")
-                            
-                            // ✅ FINÁLNÍ ZPRÁVA:
-                            progressCallback(1.0, "H.264 conversion completed!")
-                            
-                            // Clean up original file
-                            try? FileManager.default.removeItem(at: inputURL)
-                            
-                            continuation.resume(returning: outputURL)
-                            return
+                    if task.terminationStatus == 0 {
+                        if FileManager.default.fileExists(atPath: outputURL.path) {
+                            let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+                            if let fileSize = attributes[.size] as? Int64, fileSize > 1000 {
+                                print("✅ Re-encoding completed successfully")
+                                
+                                // Clean up original file
+                                try? FileManager.default.removeItem(at: inputURL)
+                                
+                                continuation.resume(returning: outputURL)
+                                return
+                            }
                         }
                     }
+                    
+                    print("❌ Re-encoding failed with exit code: \(task.terminationStatus)")
+                    continuation.resume(throwing: YouTubeError.processingFailed)
+                    
+                } catch {
+                    print("❌ Failed to start re-encoding: \(error)")
+                    continuation.resume(throwing: error)
                 }
-                
-                print("❌ Re-encoding failed")
-                progressCallback(0.0, "Conversion failed")
-                continuation.resume(throwing: YouTubeError.processingFailed)
-                
-            } catch {
-                print("❌ Failed to start re-encoding: \(error)")
-                progressCallback(0.0, "Failed to start conversion")
-                continuation.resume(throwing: error)
             }
         }
     }

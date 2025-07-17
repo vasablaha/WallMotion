@@ -7,10 +7,13 @@
 
 import SwiftUI
 
+// V YouTubeVideoInfoSection.swift - aktualizujte komponent:
+
 struct YouTubeVideoInfoSection: View {
     let importManager: YouTubeImportManager
     let onDownloadVideo: () -> Void
     let onCancelDownload: () -> Void
+    let isProcessing: Bool  // ✅ PŘIDÁNO
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -40,7 +43,6 @@ struct YouTubeVideoInfoSection: View {
                                 .foregroundColor(.blue)
                                 .lineLimit(1)
                         }
-                        .padding(.top, 4)
                     }
                     
                     Spacer()
@@ -50,20 +52,30 @@ struct YouTubeVideoInfoSection: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.gray.opacity(0.3))
+                        Rectangle()
+                            .fill(.gray.opacity(0.2))
                     }
-                    .frame(width: 80, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(width: 80, height: 45)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 
-                if importManager.isDownloading {
-                    YouTubeDownloadProgress(
-                        progress: importManager.downloadProgress,
-                        onCancel: onCancelDownload
-                    )
+                // ✅ PODMÍNČNĚ ZOBRAZ TLAČÍTKA - SKRYJ BĚHEM isProcessing
+                if !isProcessing {
+                    HStack(spacing: 12) {
+                        YouTubeDownloadButton(onDownload: onDownloadVideo)
+                    }
                 } else {
-                    YouTubeDownloadButton(onDownload: onDownloadVideo)
+                    // ✅ ZOBRAZ INFO O PROBÍHAJÍCÍM PROCESU
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                        
+                        Text("Video is being processed. Please wait...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 8)
                 }
             }
         }
@@ -73,18 +85,20 @@ struct YouTubeVideoInfoSection: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(.green.opacity(0.3), lineWidth: 1)
+                        .stroke(.gray.opacity(0.2), lineWidth: 1)
                 )
         )
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
     
-    private func formatDuration(_ seconds: Double) -> String {
-        let minutes = Int(seconds) / 60
-        let remainingSeconds = Int(seconds) % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+    private func formatDuration(_ duration: Double) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
+
+
 
 struct YouTubeDownloadProgress: View {
     let progress: Double
@@ -177,13 +191,4 @@ struct YouTubeDownloadButton: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
-}
-
-#Preview {
-    YouTubeVideoInfoSection(
-        importManager: YouTubeImportManager(),
-        onDownloadVideo: {},
-        onCancelDownload: {}
-    )
-    .padding()
 }

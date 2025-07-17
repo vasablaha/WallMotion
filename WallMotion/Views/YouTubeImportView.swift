@@ -47,11 +47,14 @@ struct YouTubeImportView: View {
                     YouTubeVideoPreviewSection(videoURL: importManager.downloadedVideoURL!)
                 }
                 
+                // ✅ A v YouTubeImportView.swift předejte isProcessing parametr:
+
                 if showingVideoInfo {
                     YouTubeVideoInfoSection(
                         importManager: importManager,
                         onDownloadVideo: downloadVideo,
-                        onCancelDownload: { importManager.cancelDownload() }
+                        onCancelDownload: { importManager.cancelDownload() },
+                        isProcessing: isProcessing  // ✅ PŘIDÁNO
                     )
                 }
                 
@@ -149,6 +152,11 @@ struct YouTubeImportView: View {
         
         print("📥 User initiated download for: \(youtubeURL)")
         
+        // ✅ NASTAVIT isProcessing = true HNED NA ZAČÁTKU
+        isProcessing = true
+        processingProgress = 0.0
+        processingMessage = "Starting download..."
+        
         Task {
             do {
                 _ = try await importManager.downloadVideo(from: youtubeURL) { progress, message in
@@ -156,11 +164,18 @@ struct YouTubeImportView: View {
                         processingProgress = progress
                         processingMessage = message
                         print("📊 Download progress: \(Int(progress * 100))% - \(message)")
+                        
+                        // ❌ ODSTRAŇTE TENTO BLOK - resetuje isProcessing příliš brzy
+                        // if message.contains("successfully") || message.contains("completed") {
+                        //     isProcessing = false
+                        // }
                     }
                 }
                 
                 await MainActor.run {
-                    print("✅ Download completed")
+                    // ✅ RESETUJ isProcessing AŽ TADY - po dokončení celé downloadVideo funkce
+                    isProcessing = false
+                    print("✅ Download + conversion completed")
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showingVideoInfo = false
                         showingTimeSelector = true
@@ -168,6 +183,7 @@ struct YouTubeImportView: View {
                 }
             } catch {
                 await MainActor.run {
+                    isProcessing = false
                     print("❌ Download failed: \(error)")
                     if let ytError = error as? YouTubeError {
                         print("   YouTube Error: \(ytError.errorDescription ?? "Unknown")")
@@ -178,7 +194,7 @@ struct YouTubeImportView: View {
             }
         }
     }
-    
+
     private func processVideo() {
         guard !isProcessing else { return }
         guard let inputURL = importManager.downloadedVideoURL else {
