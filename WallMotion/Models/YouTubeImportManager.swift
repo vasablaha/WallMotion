@@ -253,7 +253,7 @@ class YouTubeImportManager: ObservableObject {
                                     // Start re-encoding with progress
                                     await MainActor.run {
                                         self.isDownloading = true // Keep progress bar visible
-                                        progressCallback(0.0, "Converting to H.264...")
+                                        progressCallback(0.0, "Converting to H.264 codec for macOS compatibility...")
                                     }
                                     
                                     let reEncodedURL = try await self.smartReEncodeToH264(
@@ -265,7 +265,7 @@ class YouTubeImportManager: ObservableObject {
                                     await MainActor.run {
                                         self.downloadedVideoURL = reEncodedURL
                                         self.isDownloading = false
-                                        progressCallback(1.0, "Conversion completed")
+                                        progressCallback(1.0, "Video converted successfully!")
                                     }
                                     continuation.resume(returning: reEncodedURL)
                                 }
@@ -453,38 +453,42 @@ class YouTubeImportManager: ObservableObject {
                     
                     Task { @MainActor in
                         self.downloadProgress = progress
-                        progressCallback(progress, "Converting to H.264... \(percentage)%")
+                        // ✅ VYLEPŠENÁ ZPRÁVA:
+                        progressCallback(progress, "Converting to H.264 codec... \(percentage)%")
                     }
                 }
                 break
             } else if line.hasPrefix("time=") {
                 // Fallback: parse time=00:00:10.50 format
                 let timeString = String(line.dropFirst("time=".count)).components(separatedBy: " ").first ?? ""
-                if let currentSeconds = parseTimeString(timeString) {
+                if let timeComponents = parseTimeString(timeString) {
+                    let currentSeconds = timeComponents
                     let progress = min(currentSeconds / totalDuration, 1.0)
                     let percentage = Int(progress * 100)
                     
                     Task { @MainActor in
                         self.downloadProgress = progress
-                        progressCallback(progress, "Converting to H.264... \(percentage)%")
+                        // ✅ VYLEPŠENÁ ZPRÁVA:
+                        progressCallback(progress, "Converting to H.264 codec... \(percentage)%")
                     }
                 }
                 break
             }
         }
     }
-    
+
     nonisolated func parseTimeString(_ timeString: String) -> Double? {
-        let components = timeString.components(separatedBy: ":")
-        guard components.count == 3,
-              let hours = Double(components[0]),
+        // Parse format: "00:01:23.45"
+        let components = timeString.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: ":")
+        guard components.count == 3 else { return nil }
+        
+        guard let hours = Double(components[0]),
               let minutes = Double(components[1]),
-              let seconds = Double(components[2]) else {
-            return nil
-        }
+              let seconds = Double(components[2]) else { return nil }
         
         return hours * 3600 + minutes * 60 + seconds
     }
+    
 }
 
 // MARK: - Private Methods
@@ -598,10 +602,15 @@ private extension YouTubeImportManager {
         }
     }
     
+    // V YouTubeImportManager.swift - aktualizujte začátek smartReEncodeToH264:
+
     func smartReEncodeToH264(_ inputURL: URL, originalInfo: VideoProperties, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         let outputURL = tempDirectory.appendingPathComponent("h264_\(UUID().uuidString).mp4")
         
         print("🔄 Re-encoding to H.264: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
+        
+        // ✅ POČÁTEČNÍ ZPRÁVA PRO UŽIVATELE:
+        progressCallback(0.0, "Preparing video conversion to H.264...")
         
         let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
         guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
@@ -614,7 +623,7 @@ private extension YouTubeImportManager {
             
             task.arguments = [
                 "-i", inputURL.path,
-                "-t", String(originalInfo.duration), // Fix duration issues
+                "-t", String(originalInfo.duration),
                 "-c:v", "libx264",
                 "-preset", "medium",
                 "-crf", "18",
@@ -626,7 +635,7 @@ private extension YouTubeImportManager {
                 "-b:a", "128k",
                 "-movflags", "+faststart",
                 "-avoid_negative_ts", "make_zero",
-                "-progress", "pipe:1", // Enable progress output
+                "-progress", "pipe:1",
                 "-y",
                 outputURL.path
             ]
@@ -639,6 +648,9 @@ private extension YouTubeImportManager {
             var allOutput = ""
             var allErrors = ""
             
+            // ✅ OZNAM O ZAČÁTKU KONVERZE:
+            progressCallback(0.01, "Starting H.264 conversion...")
+            
             // Monitor stdout for FFmpeg progress
             outputPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
@@ -646,19 +658,12 @@ private extension YouTubeImportManager {
                     let output = String(data: data, encoding: .utf8) ?? ""
                     allOutput += output
                     
-                    // Parse FFmpeg progress
+                    // Parse FFmpeg progress s aktualizovanými zprávami
                     self.parseFFmpegProgress(output, totalDuration: originalInfo.duration, progressCallback: progressCallback)
                 }
             }
             
-            // Monitor stderr for errors
-            errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    allErrors += output
-                }
-            }
+            // Zbytek kódu zůstává stejný...
             
             do {
                 try task.run()
@@ -674,6 +679,9 @@ private extension YouTubeImportManager {
                         if let fileSize = attributes[.size] as? Int64, fileSize > 1000 {
                             print("✅ Re-encoding successful")
                             
+                            // ✅ FINÁLNÍ ZPRÁVA:
+                            progressCallback(1.0, "H.264 conversion completed!")
+                            
                             // Clean up original file
                             try? FileManager.default.removeItem(at: inputURL)
                             
@@ -684,10 +692,12 @@ private extension YouTubeImportManager {
                 }
                 
                 print("❌ Re-encoding failed")
+                progressCallback(0.0, "Conversion failed")
                 continuation.resume(throwing: YouTubeError.processingFailed)
                 
             } catch {
                 print("❌ Failed to start re-encoding: \(error)")
+                progressCallback(0.0, "Failed to start conversion")
                 continuation.resume(throwing: error)
             }
         }
