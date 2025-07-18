@@ -18,47 +18,41 @@ class DependenciesManager: ObservableObject {
     @Published var lastCheckTime = Date()
     
     // MARK: - Private Properties
-    private var installationTask: Process?
+    @Published var cachedDependencyStatus: DependencyStatus?
+     
+     // MARK: - Private Properties
+     private var installationTask: Process?
     
     // MARK: - Dependency Status
     
     struct DependencyStatus {
-        let ytdlp: Bool
-        let ffmpeg: Bool
-        let homebrew: Bool
-        
-        var allInstalled: Bool {
-            return ytdlp && ffmpeg
-        }
-        
-        var missing: [String] {
-            var missing: [String] = []
-            if !homebrew { missing.append("Homebrew") }
-            if !ytdlp { missing.append("yt-dlp") }
-            if !ffmpeg { missing.append("FFmpeg") }
-            return missing
-        }
-    }
+         let ytdlp: Bool
+         let ffmpeg: Bool
+         let homebrew: Bool
+         
+         var allInstalled: Bool {
+             return ytdlp && ffmpeg
+         }
+         
+         var missing: [String] {
+             var missing: [String] = []
+             if !homebrew { missing.append("Homebrew") }
+             if !ytdlp { missing.append("yt-dlp") }
+             if !ffmpeg { missing.append("FFmpeg") }
+             return missing
+         }
+     }
     
     // MARK: - Public Methods
     
     func checkDependencies() -> DependencyStatus {
-        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
-        let ytdlpExists = ytdlpPaths.contains { FileManager.default.fileExists(atPath: $0) }
+        // Pokud máme cached status, použijeme ho
+        if let cached = cachedDependencyStatus {
+            return cached
+        }
         
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        let ffmpegExists = ffmpegPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        let homebrewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        let homebrewExists = homebrewPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        lastCheckTime = Date()
-        
-        return DependencyStatus(
-            ytdlp: ytdlpExists,
-            ffmpeg: ffmpegExists,
-            homebrew: homebrewExists
-        )
+        // Jinak spočítáme bez publikování změn
+        return calculateDependencyStatus()
     }
     
     func getInstallationInstructions() -> String {
@@ -85,70 +79,98 @@ class DependenciesManager: ObservableObject {
         return message
     }
     
+    private func calculateDependencyStatus() -> DependencyStatus {
+        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
+        let ytdlpExists = ytdlpPaths.contains { FileManager.default.fileExists(atPath: $0) }
+        
+        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
+        let ffmpegExists = ffmpegPaths.contains { FileManager.default.fileExists(atPath: $0) }
+        
+        let homebrewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        let homebrewExists = homebrewPaths.contains { FileManager.default.fileExists(atPath: $0) }
+        
+        return DependencyStatus(
+            ytdlp: ytdlpExists,
+            ffmpeg: ffmpegExists,
+            homebrew: homebrewExists
+        )
+    }
+    
+    func refreshStatus() {
+        let newStatus = calculateDependencyStatus()
+        cachedDependencyStatus = newStatus
+        lastCheckTime = Date()
+    }
+    
     // MARK: - Automatic Installation
     
     func installDependencies() async throws {
-        print("🛠️ Starting automatic dependency installation...")
-        
-        guard !isInstalling else {
-            print("⚠️ Installation already in progress")
-            return
+            print("🛠️ Starting automatic dependency installation...")
+            
+            guard !isInstalling else {
+                print("⚠️ Installation already in progress")
+                return
+            }
+            
+            isInstalling = true
+            installationProgress = 0.0
+            installationMessage = "Checking system..."
+            
+            defer {
+                isInstalling = false
+                // Refresh status after installation
+                refreshStatus()
+            }
+            
+            do {
+                let status = checkDependencies()
+                
+                // Step 1: Install Homebrew if needed (40% of progress)
+                if !status.homebrew {
+                    try await installHomebrew()
+                } else {
+                    installationProgress = 0.4
+                    installationMessage = "Homebrew already installed ✅"
+                }
+                
+                // Step 2: Install yt-dlp if needed (30% of progress)
+                if !status.ytdlp {
+                    try await installPackage("yt-dlp", progressStart: 0.4, progressEnd: 0.7)
+                } else {
+                    installationProgress = 0.7
+                    installationMessage = "yt-dlp already installed ✅"
+                }
+                
+                // Step 3: Install FFmpeg if needed (30% of progress)
+                if !status.ffmpeg {
+                    try await installPackage("ffmpeg", progressStart: 0.7, progressEnd: 1.0)
+                } else {
+                    installationProgress = 1.0
+                    installationMessage = "FFmpeg already installed ✅"
+                }
+                
+                // Final verification
+                refreshStatus() // Použijeme refresh místo checkDependencies
+                let finalStatus = cachedDependencyStatus ?? calculateDependencyStatus()
+                if finalStatus.allInstalled {
+                    installationProgress = 1.0
+                    installationMessage = "All dependencies installed successfully! 🎉"
+                    print("✅ All dependencies installed successfully!")
+                } else {
+                    throw DependencyError.installationFailed(
+                        description: "Final verification failed",
+                        exitCode: -1,
+                        output: "Some dependencies still missing after installation"
+                    )
+                }
+                
+            } catch {
+                installationProgress = 0.0
+                installationMessage = "Installation failed: \(error.localizedDescription)"
+                print("❌ Installation failed: \(error)")
+                throw error
+            }
         }
-        
-        isInstalling = true
-        installationProgress = 0.0
-        installationMessage = "Checking system..."
-        
-        defer {
-            isInstalling = false
-        }
-        
-        do {
-            let status = checkDependencies()
-            
-            // Step 1: Install Homebrew if needed (40% of progress)
-            if !status.homebrew {
-                try await installHomebrew()
-            } else {
-                installationProgress = 0.4
-                installationMessage = "Homebrew already installed ✅"
-            }
-            
-            // Step 2: Install yt-dlp if needed (30% of progress)
-            if !status.ytdlp {
-                try await installPackage("yt-dlp", progressStart: 0.4, progressEnd: 0.7)
-            } else {
-                installationProgress = 0.7
-                installationMessage = "yt-dlp already installed ✅"
-            }
-            
-            // Step 3: Install FFmpeg if needed (30% of progress)
-            if !status.ffmpeg {
-                try await installPackage("ffmpeg", progressStart: 0.7, progressEnd: 1.0)
-            } else {
-                installationProgress = 1.0
-                installationMessage = "FFmpeg already installed ✅"
-            }
-            
-            // Final verification
-            let finalStatus = checkDependencies()
-            if finalStatus.allInstalled {
-                installationProgress = 1.0
-                installationMessage = "All dependencies installed successfully! 🎉"
-                print("✅ All dependencies installed successfully!")
-            } else {
-                throw DependencyError.installationIncomplete(missing: finalStatus.missing)
-            }
-            
-            // Show success message for 2 seconds
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-            
-        } catch {
-            installationMessage = "Installation failed: \(error.localizedDescription)"
-            print("❌ Installation failed: \(error)")
-            throw error
-        }
-    }
     
     func cancelInstallation() {
         print("🛑 Cancelling installation...")
@@ -403,11 +425,6 @@ class DependenciesManager: ObservableObject {
         return scriptURL
     }
     
-    // MARK: - Utility Methods
-    
-    func refreshStatus() {
-        objectWillChange.send()
-    }
     
     func reset() {
         cancelInstallation()

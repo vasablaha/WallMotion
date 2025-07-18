@@ -14,6 +14,8 @@
 
 import SwiftUI
 
+// TutorialView s dependencies jako normální krok tutoriálu
+
 struct TutorialView: View {
     @State private var currentStep = 0
     @StateObject private var dependenciesManager = DependenciesManager()
@@ -29,29 +31,18 @@ struct TutorialView: View {
         self.isInSidebar = isInSidebar
     }
     
-    private var tutorialSteps: [TutorialStep] {
-        let status = dependenciesManager.checkDependencies()
-        
-        // If dependencies are missing, insert dependency step at the beginning
-        if !status.allInstalled {
-            return [dependencyStep] + mainTutorialSteps
-        } else {
-            return mainTutorialSteps
-        }
-    }
-    
-    private var dependencyStep: TutorialStep {
+    // ZMĚNA: Fixní tutorial steps - dependencies jako normální krok
+    private let tutorialSteps: [TutorialStep] = [
+        // NOVÝ: Dependencies krok jako první step
         TutorialStep(
             title: "Install Required Dependencies",
             subtitle: "Set up tools for YouTube video import",
-            content: dependenciesManager.getInstallationInstructions(),
+            content: "To use YouTube import feature, WallMotion needs some command-line tools. Click the install button below to automatically set up Homebrew, yt-dlp, and FFmpeg. This is optional - you can skip this step if you only want to use local video files.",
             icon: "terminal.fill",
             imagePlaceholder: "",
             stepType: .setup
-        )
-    }
-    
-    private let mainTutorialSteps: [TutorialStep] = [
+        ),
+        
         TutorialStep(
             title: "Open System Settings",
             subtitle: "Navigate to Wallpaper settings",
@@ -170,43 +161,42 @@ struct TutorialView: View {
         }
     }
     
-    // MARK: - Header Section
     
     private var headerSection: some View {
-        VStack(spacing: 8) {
-            let currentPhase = getCurrentPhase()
-            
-            HStack(spacing: 12) {
-                Image(systemName: currentPhase.icon)
-                    .font(.title2)
-                    .foregroundColor(currentPhase.color)
+            VStack(spacing: 8) {
+                let currentPhase = getCurrentPhase()
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(currentPhase.title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                HStack(spacing: 12) {
+                    Image(systemName: currentPhase.icon)
+                        .font(.title2)
+                        .foregroundColor(currentPhase.color)
                     
-                    Text(currentPhase.subtitle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(currentPhase.title)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Text(currentPhase.subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("\(currentStep + 1)/\(tutorialSteps.count)")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(currentPhase.color.opacity(0.1))
+                        )
                 }
-                
-                Spacer()
-                
-                Text("\(currentStep + 1)/\(tutorialSteps.count)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(currentPhase.color.opacity(0.1))
-                    )
+                .padding(.horizontal, isInSidebar ? 20 : 40)
+                .padding(.top, 20)
             }
-            .padding(.horizontal, isInSidebar ? 20 : 40)
-            .padding(.top, 20)
         }
-    }
     
     // MARK: - Step Content
     
@@ -275,29 +265,26 @@ struct TutorialView: View {
                 }
             }
             
-            // Special handling for dependency step
-            if step.stepType == .setup && step.icon == "terminal.fill" {
+            // ZMĚNA: Dependency step jako normální step
+            if currentStep == 0 {
                 dependencySection(step: step, phase: currentPhase)
-            } else {
-                // Regular step content
-                if !step.imagePlaceholder.isEmpty {
-                    imagePlaceholder(step.imagePlaceholder, phase: currentPhase)
-                } else {
-                    // Special layout for steps without images (like final step)
-                    VStack(spacing: 20) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: isInSidebar ? 40 : 60))
-                            .foregroundColor(.green)
+            } else if !step.imagePlaceholder.isEmpty {
+                imagePlaceholder(step.imagePlaceholder, phase: currentPhase)
+            } else if step.icon == "checkmark.circle.fill" {
+                // Final step layout
+                VStack(spacing: 20) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: isInSidebar ? 40 : 60))
+                        .foregroundColor(.green)
+                    
+                    VStack(spacing: 8) {
+                        Text("Setup Complete!")
+                            .font(isInSidebar ? .headline : .title2)
+                            .fontWeight(.bold)
                         
-                        VStack(spacing: 8) {
-                            Text("Setup Complete!")
-                                .font(isInSidebar ? .headline : .title2)
-                                .fontWeight(.bold)
-                            
-                            Text("You're ready to use WallMotion")
-                                .font(isInSidebar ? .caption : .subheadline)
-                                .foregroundColor(.secondary)
-                        }
+                        Text("You're ready to use WallMotion")
+                            .font(isInSidebar ? .caption : .subheadline)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -375,13 +362,14 @@ struct TutorialView: View {
                                     }
                                     .buttonStyle(SecondaryButtonStyle())
                                     
-                                    Button("Save Script") {
-                                        saveInstallationScript()
+                                    Button("Skip This Step") {
+                                        // Uživatel může přeskočit dependencies
+                                        nextStep()
                                     }
                                     .buttonStyle(SecondaryButtonStyle())
                                 }
                                 
-                                Text("The automatic installer will download and install Homebrew, yt-dlp, and FFmpeg for you.")
+                                Text("The automatic installer will download and install Homebrew, yt-dlp, and FFmpeg for you. You can skip this step if you only want to use local video files.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
@@ -419,49 +407,108 @@ struct TutorialView: View {
         }
     }
     
-    // MARK: - Helper Views
+    // MARK: - Navigation Methods
     
-    private func imagePlaceholder(_ imageName: String, phase: TutorialPhase) -> some View {
-        VStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(phase.color.opacity(0.05))
-                .frame(height: isInSidebar ? 180 : 280)
-                .overlay(
-                    Group {
-                        if !imageName.isEmpty, let nsImage = NSImage(named: imageName) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(maxHeight: isInSidebar ? 170 : 270)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                        } else {
-                            VStack(spacing: 8) {
-                                Image(systemName: "photo.fill")
-                                    .font(.system(size: isInSidebar ? 30 : 40))
-                                    .foregroundColor(phase.color.opacity(0.7))
-                                
-                                Text("Screenshot will appear here")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                        }
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(phase.color.opacity(0.3), lineWidth: 1)
-                )
-            
-            if !imageName.isEmpty {
-                Text(imageName.replacingOccurrences(of: "tutorial", with: "Tutorial "))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 8)
+    private func nextStep() {
+        if currentStep < tutorialSteps.count - 1 {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                currentStep += 1
             }
+        } else {
+            onComplete?()
+        }
+    }
+    
+    private func previousStep() {
+        if currentStep > 0 {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                currentStep -= 1
+            }
+        }
+    }
+    
+    // MARK: - Phase Management
+    
+    private func getCurrentPhase() -> TutorialPhase {
+        return getPhaseForStep(currentStep)
+    }
+    
+    private func getPhaseForStep(_ step: Int) -> TutorialPhase {
+        guard step >= 0 && step < tutorialSteps.count else {
+            return TutorialPhase(
+                title: "Setup",
+                subtitle: "Getting started",
+                color: .blue,
+                icon: "gearshape.2"
+            )
+        }
+        
+        let stepData = tutorialSteps[step]
+        switch stepData.stepType {
+        case .setup:
+            return TutorialPhase(
+                title: "Initial Setup",
+                subtitle: "Configure system and dependencies",
+                color: .blue,
+                icon: "gearshape.2"
+            )
+        case .usage:
+            return TutorialPhase(
+                title: "Using WallMotion",
+                subtitle: "Import and set your videos",
+                color: .green,
+                icon: "play.rectangle.on.rectangle"
+            )
+        }
+    }
+    
+    // MARK: - Installation Methods
+    
+    private func tryInstallDependencies() async {
+        do {
+            try await dependenciesManager.installDependencies()
+            // Po úspěšné instalaci refresh status
+            dependenciesManager.refreshStatus()
+        } catch {
+            await MainActor.run {
+                installationError = error
+                showingInstallationAlert = true
+            }
+        }
+    }
+    
+    private func showManualInstructions() {
+        let alert = NSAlert()
+        alert.messageText = "Manual Installation Instructions"
+        alert.informativeText = """
+        To install the dependencies manually:
+        
+        1. Install Homebrew (if not already installed):
+           Open Terminal and run:
+           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        2. Install yt-dlp:
+           brew install yt-dlp
+        
+        3. Install FFmpeg:
+           brew install ffmpeg
+        
+        After installation, you can continue with the tutorial.
+        """
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Copy Commands")
+        
+        let response = alert.runModal()
+        
+        if response == .alertSecondButtonReturn {
+            let commands = """
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            brew install yt-dlp
+            brew install ffmpeg
+            """
+            
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(commands, forType: .string)
         }
     }
     
@@ -513,6 +560,52 @@ struct TutorialView: View {
         )
     }
     
+    // MARK: - Helper Views
+    
+    private func imagePlaceholder(_ imageName: String, phase: TutorialPhase) -> some View {
+        VStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(phase.color.opacity(0.05))
+                .frame(height: isInSidebar ? 180 : 280)
+                .overlay(
+                    Group {
+                        if !imageName.isEmpty, let nsImage = NSImage(named: imageName) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: isInSidebar ? 170 : 270)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.fill")
+                                    .font(.system(size: isInSidebar ? 30 : 40))
+                                    .foregroundColor(phase.color.opacity(0.7))
+                                
+                                Text("Screenshot will appear here")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                    }
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(phase.color.opacity(0.3), lineWidth: 1)
+                )
+            
+            if !imageName.isEmpty {
+                Text(imageName.replacingOccurrences(of: "tutorial", with: "Tutorial "))
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+        }
+    }
+    
     // MARK: - Background
     
     private var backgroundGradient: some View {
@@ -525,147 +618,9 @@ struct TutorialView: View {
         )
         .ignoresSafeArea()
     }
-    
-    // MARK: - Phase Management
-    
-    private func getCurrentPhase() -> TutorialPhase {
-        return getPhaseForStep(currentStep)
-    }
-    
-    private func getPhaseForStep(_ step: Int) -> TutorialPhase {
-        let stepData = tutorialSteps[step]
-        switch stepData.stepType {
-        case .setup:
-            return TutorialPhase(
-                title: "Initial Setup",
-                subtitle: "Configure system and dependencies",
-                color: .blue,
-                icon: "gearshape.2"
-            )
-        case .usage:
-            return TutorialPhase(
-                title: "Using WallMotion",
-                subtitle: "Import and set your videos",
-                color: .green,
-                icon: "play.rectangle.on.rectangle"
-            )
-        }
-    }
-    
-    // MARK: - Navigation Methods
-    
-    private func nextStep() {
-        // Check if we're on the dependency step and dependencies aren't installed
-        if currentStep == 0 && tutorialSteps[currentStep].icon == "terminal.fill" {
-            let status = dependenciesManager.checkDependencies()
-            if !status.allInstalled {
-                // Don't allow proceeding without dependencies
-                return
-            }
-        }
-        
-        if currentStep < tutorialSteps.count - 1 {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                currentStep += 1
-            }
-        } else {
-            onComplete?()
-        }
-    }
-    
-    private func previousStep() {
-        if currentStep > 0 {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                currentStep -= 1
-            }
-        }
-    }
-    
-    // MARK: - Installation Methods
-    
-    private func tryInstallDependencies() async {
-        do {
-            try await dependenciesManager.installDependencies()
-            
-            // After successful installation, refresh the tutorial steps
-            await MainActor.run {
-                dependenciesManager.refreshStatus()
-            }
-            
-        } catch {
-            await MainActor.run {
-                installationError = error
-                showingInstallationAlert = true
-            }
-        }
-    }
-    
-    private func showManualInstructions() {
-        let alert = NSAlert()
-        alert.messageText = "Manual Installation Instructions"
-        alert.informativeText = """
-        To install the dependencies manually:
-        
-        1. Install Homebrew (if not already installed):
-           Open Terminal and run:
-           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        
-        2. Install yt-dlp:
-           brew install yt-dlp
-        
-        3. Install FFmpeg:
-           brew install ffmpeg
-        
-        After installation, click "Next" to continue.
-        """
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Copy Commands")
-        
-        let response = alert.runModal()
-        
-        if response == .alertSecondButtonReturn {
-            let commands = """
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            brew install yt-dlp
-            brew install ffmpeg
-            """
-            
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(commands, forType: .string)
-        }
-    }
-    
-    private func saveInstallationScript() {
-        do {
-            let scriptURL = try dependenciesManager.saveInstallationScript()
-            
-            let alert = NSAlert()
-            alert.messageText = "Installation Script Saved"
-            alert.informativeText = """
-            The installation script has been saved to:
-            \(scriptURL.path)
-            
-            You can run it in Terminal with:
-            bash "\(scriptURL.path)"
-            """
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Show in Finder")
-            
-            let response = alert.runModal()
-            
-            if response == .alertSecondButtonReturn {
-                NSWorkspace.shared.selectFile(scriptURL.path, inFileViewerRootedAtPath: scriptURL.deletingLastPathComponent().path)
-            }
-            
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Error Saving Script"
-            alert.informativeText = error.localizedDescription
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
-    }
 }
+
+// MARK: - Support Views zůstávají stejné...
 
 // MARK: - Support Views
 

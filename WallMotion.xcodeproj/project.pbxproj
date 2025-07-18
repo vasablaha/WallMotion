@@ -61,6 +61,7 @@
 		3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		58541E692E27C4C900C9C8D0 /* VideoSaver */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = VideoSaver; sourceTree = BUILT_PRODUCTS_DIR; };
+		58FE65F52E2926F8005B882B /* entitlements.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = entitlements.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -134,6 +135,7 @@
 		351636472E23F6FC00C8C331 = {
 			isa = PBXGroup;
 			children = (
+				58FE65F52E2926F8005B882B /* entitlements.plist */,
 				351636522E23F6FC00C8C331 /* WallMotion */,
 				351636612E23F6FE00C8C331 /* WallMotionTests */,
 				3516366B2E23F6FE00C8C331 /* WallMotionUITests */,
