@@ -2,57 +2,110 @@
 //  DependenciesManager.swift
 //  WallMotion
 //
-//  Manages installation of external dependencies (Homebrew, yt-dlp, FFmpeg)
-//
 
 import Foundation
 import SwiftUI
 
 @MainActor
 class DependenciesManager: ObservableObject {
-    
-    // MARK: - Published Properties
-    @Published var isInstalling = false
     @Published var installationProgress: Double = 0.0
-    @Published var installationMessage = ""
-    @Published var lastCheckTime = Date()
+    @Published var installationMessage: String = ""
+    @Published var isInstalling: Bool = false
     
-    // MARK: - Private Properties
-    @Published var cachedDependencyStatus: DependencyStatus?
-     
-     // MARK: - Private Properties
-     private var installationTask: Process?
-    
-    // MARK: - Dependency Status
+    private var installationTask: Process?
     
     struct DependencyStatus {
-         let ytdlp: Bool
-         let ffmpeg: Bool
-         let homebrew: Bool
-         
-         var allInstalled: Bool {
-             return ytdlp && ffmpeg
-         }
-         
-         var missing: [String] {
-             var missing: [String] = []
-             if !homebrew { missing.append("Homebrew") }
-             if !ytdlp { missing.append("yt-dlp") }
-             if !ffmpeg { missing.append("FFmpeg") }
-             return missing
-         }
-     }
-    
-    // MARK: - Public Methods
-    
-    func checkDependencies() -> DependencyStatus {
-        // Pokud máme cached status, použijeme ho
-        if let cached = cachedDependencyStatus {
-            return cached
+        let homebrew: Bool
+        let ytdlp: Bool
+        let ffmpeg: Bool
+        
+        var allInstalled: Bool {
+            return homebrew && ytdlp && ffmpeg
         }
         
-        // Jinak spočítáme bez publikování změn
-        return calculateDependencyStatus()
+        var missing: [String] {
+            var missing: [String] = []
+            if !homebrew { missing.append("Homebrew") }
+            if !ytdlp { missing.append("yt-dlp") }
+            if !ffmpeg { missing.append("FFmpeg") }
+            return missing
+        }
+    }
+    
+    func checkDependencies() -> DependencyStatus {
+        print("🔍 Starting dependency check...")
+        
+        print("🔍 Checking Homebrew...")
+        let homebrewExists = checkHomebrewInstallation()
+        print("🔍 Homebrew result: \(homebrewExists)")
+        
+        print("🔍 Checking yt-dlp...")
+        let ytdlpExists = checkCommand("yt-dlp")
+        print("🔍 yt-dlp result: \(ytdlpExists)")
+        
+        print("🔍 Checking ffmpeg...")
+        let ffmpegExists = checkCommand("ffmpeg")
+        print("🔍 ffmpeg result: \(ffmpegExists)")
+        
+        print("🔍 Creating DependencyStatus...")
+        let status = DependencyStatus(
+            homebrew: homebrewExists,
+            ytdlp: ytdlpExists,
+            ffmpeg: ffmpegExists
+        )
+        print("🔍 Dependency check complete!")
+        
+        return status
+    }
+    
+    private func checkHomebrewInstallation() -> Bool {
+        print("🍺 Checking Homebrew paths...")
+        let homebrewPaths = [
+            "/opt/homebrew/bin/brew",
+            "/usr/local/bin/brew",
+            "/home/linuxbrew/.linuxbrew/bin/brew"
+        ]
+        
+        for path in homebrewPaths {
+            print("🍺 Checking path: \(path)")
+            let exists = FileManager.default.fileExists(atPath: path)
+            print("🍺 Path \(path) exists: \(exists)")
+            if exists {
+                return true
+            }
+        }
+        
+        print("🍺 No Homebrew found")
+        return false
+    }
+    
+    private func checkCommand(_ command: String) -> Bool {
+        print("⚙️ Checking command: \(command)")
+        
+        // Místo which použij přímou kontrolu cest
+        let commonPaths = [
+            "/opt/homebrew/bin/\(command)",
+            "/usr/local/bin/\(command)",
+            "/usr/bin/\(command)",
+            "/bin/\(command)"
+        ]
+        
+        for path in commonPaths {
+            print("⚙️ Checking path: \(path)")
+            let exists = FileManager.default.fileExists(atPath: path)
+            print("⚙️ Path \(path) exists: \(exists)")
+            if exists {
+                print("⚙️ Command \(command) found at: \(path)")
+                return true
+            }
+        }
+        
+        print("⚙️ Command \(command) not found in any common path")
+        return false
+    }
+    
+    func refreshStatus() {
+        objectWillChange.send()
     }
     
     func getInstallationInstructions() -> String {
@@ -79,98 +132,225 @@ class DependenciesManager: ObservableObject {
         return message
     }
     
-    private func calculateDependencyStatus() -> DependencyStatus {
-        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
-        let ytdlpExists = ytdlpPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        let ffmpegExists = ffmpegPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        let homebrewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        let homebrewExists = homebrewPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        return DependencyStatus(
-            ytdlp: ytdlpExists,
-            ffmpeg: ffmpegExists,
-            homebrew: homebrewExists
-        )
-    }
-    
-    func refreshStatus() {
-        let newStatus = calculateDependencyStatus()
-        cachedDependencyStatus = newStatus
-        lastCheckTime = Date()
-    }
-    
-    // MARK: - Automatic Installation
+    // MARK: - Hlavní instalační metoda s admin oprávněními
     
     func installDependencies() async throws {
-            print("🛠️ Starting automatic dependency installation...")
+        guard !isInstalling else { return }
+        
+        isInstalling = true
+        installationProgress = 0.0
+        installationMessage = "Starting installation..."
+        
+        defer {
+            isInstalling = false
+        }
+        
+        do {
+            // Použijeme sudo nebo osascript pro zvýšená oprávnění
+            try await installWithAdminRights()
             
-            guard !isInstalling else {
-                print("⚠️ Installation already in progress")
-                return
+            // Finální ověření
+            let finalStatus = checkDependencies()
+            if finalStatus.allInstalled {
+                installationProgress = 1.0
+                installationMessage = "All dependencies installed successfully! 🎉"
+                print("✅ All dependencies installed successfully!")
+            } else {
+                throw DependencyError.installationIncomplete(missing: finalStatus.missing)
             }
             
-            isInstalling = true
+        } catch {
             installationProgress = 0.0
-            installationMessage = "Checking system..."
-            
-            defer {
-                isInstalling = false
-                // Refresh status after installation
-                refreshStatus()
-            }
-            
-            do {
-                let status = checkDependencies()
+            installationMessage = "Installation failed: \(error.localizedDescription)"
+            print("❌ Installation failed: \(error)")
+            throw error
+        }
+    }
+    
+    // MARK: - Instalace s admin oprávněními
+    
+    private func installWithAdminRights() async throws {
+        installationMessage = "Requesting administrator privileges..."
+        installationProgress = 0.1
+        
+        let script = createInstallationScript()
+        let scriptPath = try saveInstallationScript(script)
+        
+        // Použijeme osascript pro spuštění s admin oprávněními
+        try await runScriptWithAdminRights(scriptPath: scriptPath.path)
+    }
+    
+    private func runScriptWithAdminRights(scriptPath: String) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let appleScript = """
+                do shell script "bash '\(scriptPath)'" with administrator privileges
+                """
                 
-                // Step 1: Install Homebrew if needed (40% of progress)
-                if !status.homebrew {
-                    try await installHomebrew()
-                } else {
-                    installationProgress = 0.4
-                    installationMessage = "Homebrew already installed ✅"
+                var error: NSDictionary?
+                let script = NSAppleScript(source: appleScript)
+                
+                DispatchQueue.main.async {
+                    self.updateProgress(0.2, "Installing Homebrew...")
                 }
                 
-                // Step 2: Install yt-dlp if needed (30% of progress)
-                if !status.ytdlp {
-                    try await installPackage("yt-dlp", progressStart: 0.4, progressEnd: 0.7)
-                } else {
-                    installationProgress = 0.7
-                    installationMessage = "yt-dlp already installed ✅"
-                }
+                let result = script?.executeAndReturnError(&error)
                 
-                // Step 3: Install FFmpeg if needed (30% of progress)
-                if !status.ffmpeg {
-                    try await installPackage("ffmpeg", progressStart: 0.7, progressEnd: 1.0)
-                } else {
-                    installationProgress = 1.0
-                    installationMessage = "FFmpeg already installed ✅"
+                DispatchQueue.main.async {
+                    if let error = error {
+                        print("AppleScript error: \(error)")
+                        continuation.resume(throwing: DependencyError.installationFailed(
+                            description: "Admin installation failed",
+                            exitCode: -1,
+                            output: error.description
+                        ))
+                    } else {
+                        print("Installation completed successfully")
+                        self.updateProgress(1.0, "Installation completed!")
+                        continuation.resume()
+                    }
                 }
-                
-                // Final verification
-                refreshStatus() // Použijeme refresh místo checkDependencies
-                let finalStatus = cachedDependencyStatus ?? calculateDependencyStatus()
-                if finalStatus.allInstalled {
-                    installationProgress = 1.0
-                    installationMessage = "All dependencies installed successfully! 🎉"
-                    print("✅ All dependencies installed successfully!")
-                } else {
-                    throw DependencyError.installationFailed(
-                        description: "Final verification failed",
-                        exitCode: -1,
-                        output: "Some dependencies still missing after installation"
-                    )
-                }
-                
-            } catch {
-                installationProgress = 0.0
-                installationMessage = "Installation failed: \(error.localizedDescription)"
-                print("❌ Installation failed: \(error)")
-                throw error
             }
         }
+    }
+    
+    // MARK: - Vylepšený instalační skript
+    
+    private func createInstallationScript() -> String {
+        let status = checkDependencies()
+        var script = "#!/bin/bash\n\n"
+        script += "set -e\n"  // Exit on any error
+        script += "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\n\n"
+        
+        script += "echo \"🚀 WallMotion Dependencies Installer\"\n"
+        script += "echo \"====================================\"\n\n"
+        
+        // Funkce pro kontrolu příkazů
+        script += """
+        command_exists() {
+            command -v "$1" >/dev/null 2>&1
+        }
+
+        """
+        
+        // Instalace Homebrew
+        if !status.homebrew {
+            script += """
+            if ! command_exists brew; then
+                echo "🍺 Installing Homebrew..."
+                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                
+                # Add Homebrew to PATH for Apple Silicon Macs
+                if [[ -f "/opt/homebrew/bin/brew" ]]; then
+                    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+                    eval "$(/opt/homebrew/bin/brew shellenv)"
+                fi
+                
+                # Add Homebrew to PATH for Intel Macs
+                if [[ -f "/usr/local/bin/brew" ]]; then
+                    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
+                    eval "$(/usr/local/bin/brew shellenv)"
+                fi
+                
+                echo "✅ Homebrew installed successfully"
+            else
+                echo "✅ Homebrew already installed"
+            fi
+
+            """
+        }
+        
+        // Update Homebrew
+        script += """
+        echo "🔄 Updating Homebrew..."
+        brew update || echo "⚠️ Homebrew update failed, continuing..."
+
+        """
+        
+        // Instalace yt-dlp
+        if !status.ytdlp {
+            script += """
+            if ! command_exists yt-dlp; then
+                echo "📺 Installing yt-dlp..."
+                brew install yt-dlp
+                echo "✅ yt-dlp installed successfully"
+            else
+                echo "✅ yt-dlp already installed"
+            fi
+
+            """
+        }
+        
+        // Instalace FFmpeg
+        if !status.ffmpeg {
+            script += """
+            if ! command_exists ffmpeg; then
+                echo "🎬 Installing FFmpeg..."
+                brew install ffmpeg
+                echo "✅ FFmpeg installed successfully"
+            else
+                echo "✅ FFmpeg already installed"
+            fi
+
+            """
+        }
+        
+        // Finální ověření
+        script += """
+        echo ""
+        echo "🔍 Verifying installations..."
+        
+        if command_exists brew; then
+            echo "✅ Homebrew: $(brew --version | head -1)"
+        else
+            echo "❌ Homebrew not found"
+            exit 1
+        fi
+
+        if command_exists yt-dlp; then
+            echo "✅ yt-dlp: $(yt-dlp --version 2>/dev/null || echo 'installed')"
+        else
+            echo "❌ yt-dlp not found"
+            exit 1
+        fi
+
+        if command_exists ffmpeg; then
+            echo "✅ FFmpeg: $(ffmpeg -version 2>/dev/null | head -1 | cut -d' ' -f1-3)"
+        else
+            echo "❌ FFmpeg not found"
+            exit 1
+        fi
+
+        echo ""
+        echo "🎉 All dependencies installed successfully!"
+        echo "You can now close this window and use WallMotion's YouTube import feature."
+        """
+        
+        return script
+    }
+    
+    private func saveInstallationScript(_ script: String) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let scriptURL = tempDir.appendingPathComponent("wallmotion_install_dependencies.sh")
+        
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        
+        // Make script executable
+        let chmodProcess = Process()
+        chmodProcess.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmodProcess.arguments = ["+x", scriptURL.path]
+        try chmodProcess.run()
+        chmodProcess.waitUntilExit()
+        
+        return scriptURL
+    }
+    
+    // MARK: - Helper methods
+    
+    private func updateProgress(_ progress: Double, _ message: String) {
+        self.installationProgress = progress
+        self.installationMessage = message
+    }
     
     func cancelInstallation() {
         print("🛑 Cancelling installation...")
@@ -181,87 +361,14 @@ class DependenciesManager: ObservableObject {
         installationMessage = "Installation cancelled"
     }
     
-    // MARK: - Private Installation Methods
-    
-    private func installHomebrew() async throws {
-        print("🍺 Installing Homebrew...")
-        installationMessage = "Installing Homebrew package manager..."
-        
-        // Kontrola, zda už není Homebrew nainstalovaný
-        let homebrewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        let homebrewExists = homebrewPaths.contains { FileManager.default.fileExists(atPath: $0) }
-        
-        if homebrewExists {
-            installationProgress = 0.4
-            installationMessage = "Homebrew already installed ✅"
-            print("✅ Homebrew already installed")
-            return
-        }
-        
-        // V sandboxu nemůžeme přímo instalovat Homebrew
-        // Místo toho zobrazíme uživateli instrukce a otevřeme Terminal
-        await MainActor.run {
-            showHomebrewInstallationDialog()
-        }
-        
-        throw DependencyError.permissionDenied
+    func reset() {
+        cancelInstallation()
+        installationProgress = 0.0
+        installationMessage = ""
     }
-
     
-    @MainActor
-    private func showHomebrewInstallationDialog() {
-        let alert = NSAlert()
-        alert.messageText = "Homebrew Installation Required"
-        alert.informativeText = """
-        WallMotion needs to install Homebrew to download YouTube videos.
-        
-        Due to security restrictions, this must be done manually:
-        
-        1. Open Terminal (⌘+Space, type "Terminal")
-        2. Paste and run this command:
-        
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        
-        3. After installation, restart WallMotion
-        
-        Would you like to:
-        """
-        
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open Terminal & Copy Command")
-        alert.addButton(withTitle: "Copy Command Only")
-        alert.addButton(withTitle: "Cancel")
-        
-        let response = alert.runModal()
-        
-        let installCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        
-        switch response {
-        case .alertFirstButtonReturn:
-            // Open Terminal and copy command
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(installCommand, forType: .string)
-            
-            if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
-                NSWorkspace.shared.open(terminalURL)
-            }
-            
-        case .alertSecondButtonReturn:
-            // Copy command only
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(installCommand, forType: .string)
-            
-            let copyAlert = NSAlert()
-            copyAlert.messageText = "Command Copied!"
-            copyAlert.informativeText = "The installation command has been copied to your clipboard. Open Terminal and paste it."
-            copyAlert.addButton(withTitle: "OK")
-            copyAlert.runModal()
-            
-        default:
-            break
-        }
-    }
-
+    // MARK: - Původní metody pro zpětnou kompatibilitu
+    
     private func installPackage(_ packageName: String, progressStart: Double, progressEnd: Double) async throws {
         print("📦 Installing \(packageName)...")
         installationMessage = "Installing \(packageName)..."
@@ -285,66 +392,6 @@ class DependenciesManager: ObservableObject {
                 showManualInstallationDialog(for: packageName, brewPath: brewPath)
             }
             throw error
-        }
-    }
-
-    
-    @MainActor
-    private func showMissingHomebrewDialog() {
-        let alert = NSAlert()
-        alert.messageText = "Homebrew Not Found"
-        alert.informativeText = """
-        Homebrew package manager is required but not installed.
-        
-        Please install Homebrew first by running this command in Terminal:
-        
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        
-        Then restart WallMotion.
-        """
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Copy Command")
-        alert.addButton(withTitle: "OK")
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            let installCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(installCommand, forType: .string)
-        }
-    }
-    
-    @MainActor
-    private func showManualInstallationDialog(for packageName: String, brewPath: String) {
-        let alert = NSAlert()
-        alert.messageText = "\(packageName.capitalized) Installation Failed"
-        alert.informativeText = """
-        Automatic installation failed due to security restrictions.
-        
-        Please install \(packageName) manually by running this command in Terminal:
-        
-        \(brewPath) install \(packageName)
-        
-        Then restart WallMotion or click "Refresh Status".
-        """
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Copy Command")
-        alert.addButton(withTitle: "Refresh Status")
-        alert.addButton(withTitle: "Cancel")
-        
-        let response = alert.runModal()
-        
-        switch response {
-        case .alertFirstButtonReturn:
-            // Copy command
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString("\(brewPath) install \(packageName)", forType: .string)
-            
-        case .alertSecondButtonReturn:
-            // Refresh status
-            refreshStatus()
-            
-        default:
-            break
         }
     }
     
@@ -406,44 +453,74 @@ class DependenciesManager: ObservableObject {
             }
         }
     }
-
-
-    // Přidání nové veřejné metody pro manual refresh
-    func checkAndRefreshDependencies() {
-        refreshStatus()
+    
+    // MARK: - Fallback manual installation methods
+    
+    @MainActor
+    private func showManualInstallationDialog(for packageName: String, brewPath: String) {
+        let alert = NSAlert()
+        alert.messageText = "\(packageName.capitalized) Installation Failed"
+        alert.informativeText = """
+        Automatic installation failed due to security restrictions.
         
-        let status = checkDependencies()
+        Please install \(packageName) manually by running this command in Terminal:
         
-        if status.allInstalled {
-            Task { @MainActor in
-                let alert = NSAlert()
-                alert.messageText = "Dependencies Check"
-                alert.informativeText = "✅ All dependencies are properly installed!"
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            }
-        } else {
-            Task { @MainActor in
-                let missing = status.missing.joined(separator: ", ")
-                let alert = NSAlert()
-                alert.messageText = "Missing Dependencies"
-                alert.informativeText = "❌ Still missing: \(missing)\n\nPlease install them manually using Terminal."
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "Show Instructions")
-                alert.addButton(withTitle: "OK")
-                
-                if alert.runModal() == .alertFirstButtonReturn {
-                    showInstallationInstructionsDialog()
-                }
-            }
+        \(brewPath) install \(packageName)
+        
+        Then restart WallMotion or click "Refresh Status".
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Open Terminal")
+        alert.addButton(withTitle: "OK")
+        
+        let response = alert.runModal()
+        
+        switch response {
+        case .alertFirstButtonReturn:
+            let command = "\(brewPath) install \(packageName)"
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(command, forType: .string)
+            
+            let copyAlert = NSAlert()
+            copyAlert.messageText = "Command Copied"
+            copyAlert.informativeText = "The installation command has been copied to your clipboard. Open Terminal and paste it."
+            copyAlert.addButton(withTitle: "OK")
+            copyAlert.runModal()
+            
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+            
+        default:
+            break
         }
     }
-
+    
     @MainActor
-    private func showInstallationInstructionsDialog() {
+    func showManualInstallationInstructions() {
+        let alert = NSAlert()
+        alert.messageText = "Manual Installation Required"
+        alert.informativeText = createManualInstructions()
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Copy Commands")
+        alert.addButton(withTitle: "Open Terminal")
+        alert.addButton(withTitle: "OK")
+        
+        let response = alert.runModal()
+        
+        switch response {
+        case .alertFirstButtonReturn:
+            copyManualCommands()
+        case .alertSecondButtonReturn:
+            openTerminal()
+        default:
+            break
+        }
+    }
+    
+    private func createManualInstructions() -> String {
         let status = checkDependencies()
-        var instructions = "Manual Installation Instructions:\n\n"
+        var instructions = "Please install the missing dependencies manually:\n\n"
         
         if !status.homebrew {
             instructions += "1. Install Homebrew:\n"
@@ -461,229 +538,94 @@ class DependenciesManager: ObservableObject {
         }
         
         instructions += "After installation, restart WallMotion or click 'Refresh Status'."
+        return instructions
+    }
+    
+    private func copyManualCommands() {
+        let commands = """
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        brew install yt-dlp
+        brew install ffmpeg
+        """
+        
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(commands, forType: .string)
         
         let alert = NSAlert()
-        alert.messageText = "Installation Instructions"
-        alert.informativeText = instructions
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Copy All Commands")
+        alert.messageText = "Commands Copied"
+        alert.informativeText = "The installation commands have been copied to your clipboard. Open Terminal and paste them."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    private func openTerminal() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+    }
+    
+    @MainActor
+    private func showMissingHomebrewDialog() {
+        let alert = NSAlert()
+        alert.messageText = "Homebrew Not Found"
+        alert.informativeText = """
+        Homebrew package manager is required but not installed.
+        
+        Please install Homebrew first by running this command in Terminal:
+        
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        Then restart WallMotion.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Copy Command")
         alert.addButton(withTitle: "OK")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            var commands = ""
-            if !status.homebrew {
-                commands += "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n"
-            }
-            if !status.ytdlp {
-                commands += "brew install yt-dlp\n"
-            }
-            if !status.ffmpeg {
-                commands += "brew install ffmpeg\n"
-            }
-            
+            let installCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(commands, forType: .string)
+            NSPasteboard.general.setString(installCommand, forType: .string)
         }
     }
     
-    private func runInstallationScript(
-        _ script: String,
-        description: String,
-        progressStart: Double,
-        progressEnd: Double
-    ) async throws {
-        return try await withCheckedThrowingContinuation { continuation in
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/bin/bash")
-            task.arguments = ["-c", script]
+    @MainActor
+    private func showHomebrewInstallationDialog() {
+        let alert = NSAlert()
+        alert.messageText = "Homebrew Installation Required"
+        alert.informativeText = """
+        WallMotion needs to install Homebrew to download YouTube videos.
+        
+        Due to security restrictions, this must be done manually:
+        
+        1. Open Terminal (⌘+Space, type "Terminal")
+        2. Paste and run this command:
+        
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        3. Restart WallMotion after installation
+        """
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Open Terminal")
+        alert.addButton(withTitle: "OK")
+        
+        let response = alert.runModal()
+        
+        switch response {
+        case .alertFirstButtonReturn:
+            let installCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(installCommand, forType: .string)
             
-            let outputPipe = Pipe()
-            let errorPipe = Pipe()
-            task.standardOutput = outputPipe
-            task.standardError = errorPipe
+            let copyAlert = NSAlert()
+            copyAlert.messageText = "Command Copied"
+            copyAlert.informativeText = "The installation command has been copied to your clipboard. Open Terminal and paste it."
+            copyAlert.addButton(withTitle: "OK")
+            copyAlert.runModal()
             
-            // Use actor-isolated data storage
-            let outputCollector = OutputCollector()
-            let errorCollector = OutputCollector()
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
             
-            // Create progress timer that's sendable
-            let progressTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
-            progressTimer.schedule(deadline: .now(), repeating: .milliseconds(500))
-            progressTimer.setEventHandler { [weak self] in
-                Task { @MainActor in
-                    guard let self = self, self.isInstalling else {
-                        progressTimer.cancel()
-                        return
-                    }
-                    
-                    let currentProgress = self.installationProgress
-                    let increment = (progressEnd - progressStart) * 0.1
-                    let newProgress = min(currentProgress + increment, progressEnd - 0.01)
-                    self.installationProgress = newProgress
-                }
-            }
-            progressTimer.resume()
-            
-            // Monitor output
-            outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    
-                    Task {
-                        await outputCollector.append(data)
-                    }
-                    
-                    // Update installation message with relevant output
-                    let lines = output.components(separatedBy: .newlines)
-                    for line in lines {
-                        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty && !trimmed.hasPrefix("=") {
-                            Task { @MainActor in
-                                self.installationMessage = "Installing... \(trimmed.prefix(50))"
-                            }
-                            break
-                        }
-                    }
-                }
-            }
-            
-            // Monitor errors
-            errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    Task {
-                        await errorCollector.append(data)
-                    }
-                }
-            }
-            
-            task.terminationHandler = { task in
-                progressTimer.cancel()
-                outputPipe.fileHandleForReading.readabilityHandler = nil
-                errorPipe.fileHandleForReading.readabilityHandler = nil
-                
-                Task { @MainActor in
-                    self.installationProgress = progressEnd
-                }
-                
-                if task.terminationStatus == 0 {
-                    print("✅ \(description) completed successfully")
-                    continuation.resume()
-                } else {
-                    print("❌ \(description) failed with exit code: \(task.terminationStatus)")
-                    
-                    Task {
-                        let allErrors = await errorCollector.getString()
-                        let allOutput = await outputCollector.getString()
-                        
-                        print("Error output: \(allErrors)")
-                        
-                        let error = DependencyError.installationFailed(
-                            description: description,
-                            exitCode: task.terminationStatus,
-                            output: allErrors.isEmpty ? allOutput : allErrors
-                        )
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-            
-            do {
-                try task.run()
-                self.installationTask = task
-            } catch {
-                progressTimer.cancel()
-                print("❌ Failed to start \(description): \(error)")
-                continuation.resume(throwing: error)
-            }
+        default:
+            break
         }
-    }
-    
-    // MARK: - Script Generation
-    
-    func createInstallationScript() -> String {
-        let status = checkDependencies()
-        var script = "#!/bin/bash\n\n"
-        script += "# WallMotion Dependencies Installer\n"
-        script += "# This script will install required dependencies for YouTube video import\n\n"
-        script += "echo \"🚀 WallMotion Dependencies Installer\"\n"
-        script += "echo \"====================================\"\n\n"
-        
-        script += "# Function to check if command exists\n"
-        script += "command_exists() {\n"
-        script += "    command -v \"$1\" >/dev/null 2>&1\n"
-        script += "}\n\n"
-        
-        script += "# Install Homebrew if not present\n"
-        script += "if ! command_exists brew; then\n"
-        script += "    echo \"📦 Installing Homebrew...\"\n"
-        script += "    /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n"
-        script += "    echo \"✅ Homebrew installed\"\n"
-        script += "else\n"
-        script += "    echo \"✅ Homebrew already installed\"\n"
-        script += "fi\n\n"
-        
-        script += "# Update Homebrew\n"
-        script += "echo \"🔄 Updating Homebrew...\"\n"
-        script += "brew update\n\n"
-        
-        if !status.ytdlp {
-            script += "# Install yt-dlp\n"
-            script += "echo \"📺 Installing yt-dlp...\"\n"
-            script += "brew install yt-dlp\n"
-            script += "echo \"✅ yt-dlp installed\"\n\n"
-        }
-        
-        if !status.ffmpeg {
-            script += "# Install FFmpeg\n"
-            script += "echo \"🎬 Installing FFmpeg...\"\n"
-            script += "brew install ffmpeg\n"
-            script += "echo \"✅ FFmpeg installed\"\n\n"
-        }
-        
-        script += "# Verify installations\n"
-        script += "echo \"🔍 Verifying installations...\"\n"
-        script += "if command_exists yt-dlp; then\n"
-        script += "    echo \"✅ yt-dlp: $(yt-dlp --version | head -1)\"\n"
-        script += "else\n"
-        script += "    echo \"❌ yt-dlp not found\"\n"
-        script += "fi\n\n"
-        
-        script += "if command_exists ffmpeg; then\n"
-        script += "    echo \"✅ FFmpeg: $(ffmpeg -version | head -1)\"\n"
-        script += "else\n"
-        script += "    echo \"❌ FFmpeg not found\"\n"
-        script += "fi\n\n"
-        
-        script += "echo \"🎉 Installation complete!\"\n"
-        script += "echo \"You can now use WallMotion's YouTube import feature.\"\n"
-        
-        return script
-    }
-    
-    func saveInstallationScript() throws -> URL {
-        let script = createInstallationScript()
-        let tempDir = FileManager.default.temporaryDirectory
-        let scriptURL = tempDir.appendingPathComponent("wallmotion_install_dependencies.sh")
-        
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        
-        // Make script executable
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/chmod")
-        process.arguments = ["+x", scriptURL.path]
-        try process.run()
-        process.waitUntilExit()
-        
-        return scriptURL
-    }
-    
-    
-    func reset() {
-        cancelInstallation()
-        installationProgress = 0.0
-        installationMessage = ""
     }
 }
 
@@ -701,7 +643,7 @@ enum DependencyError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .homebrewNotFound:
-            return "Homebrew not found. Please install Homebrew first from brew.sh"
+            return "Homebrew package manager not found"
         case .homebrewInstallationFailed:
             return "Failed to install Homebrew. Please check your internet connection and try again."
         case .installationFailed(let description, let exitCode, let output):
@@ -709,11 +651,11 @@ enum DependencyError: LocalizedError {
         case .installationIncomplete(let missing):
             return "Installation incomplete. Missing: \(missing.joined(separator: ", "))"
         case .permissionDenied:
-            return "Permission denied. Please run with administrator privileges."
+            return "Permission denied. Administrator privileges required."
         case .networkError:
             return "Network error during installation. Please check your internet connection."
         case .unsupportedSystem:
-            return "Unsupported system. This feature requires macOS 10.15 or later."
+            return "Unsupported system configuration"
         }
     }
 }
