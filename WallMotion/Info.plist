@@ -112,7 +112,50 @@
     
     <!-- Minimum System Version -->
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
+    
+    <!-- Vypneme sandbox pro plnou funkcionalnost -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    
+    <!-- Čtení a zápis souborů -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- Síťový přístup pro stažení dependencies -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Apple Events pro spouštění skriptů -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    <!-- Oprávnění pro spouštění externích procesů -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    
+    <!-- Oprávnění pro neddressované spustitelné soubory -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <!-- Vypnutí validace knihoven -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    
+    <!-- Přístup ke stažení -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    
+    <!-- Přístup k filmům a obrázkům -->
+    <key>com.apple.security.assets.movies.read-write</key>
+    <true/>
+    <key>com.apple.security.assets.pictures.read-write</key>
+    <true/>
+    
+    <!-- Oprávnění pro spouštění externích aplikací -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+     
     
     <!-- Copyright -->
     <key>NSHumanReadableCopyright</key>
