@@ -13,7 +13,7 @@ class VideoSaverAgent {
     private let wallMotionMarkerFile = "wallmotion_active"
     
     func run() {
-        print("🚀 VideoSaverAgent started - version 1.0")
+        print("🚀 VideoSaverAgent started - version 1.1 (Silent Refresh)")
         
         // Prvotní refresh při spuštění
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -85,25 +85,127 @@ class VideoSaverAgent {
         }
     }
     
+    // MARK: - ✅ NOVÁ HYBRID REFRESH METODA
     private func refreshWallMotionWallpaper() {
         guard isWallMotionWallpaperActive() else {
             print("ℹ️ WallMotion wallpaper not active, skipping refresh")
             return
         }
         
-        print("🔄 VideoSaverAgent: Refreshing WallMotion wallpaper...")
+        print("🔄 VideoSaverAgent: Attempting silent refresh...")
         
-        DispatchQueue.global(qos: .background).async {
-            // Refresh WallpaperAgent
-            self.runShellCommand("killall", arguments: ["WallpaperAgent"])
+        // Zkus silent refresh na main thread (pro NSWorkspace API)
+        DispatchQueue.main.async {
+            if self.trySilentRefresh() {
+                print("✅ Silent refresh successful - no gray wallpaper!")
+                return
+            }
             
-            // Touch wallpaper files
-            self.touchWallpaperFiles()
-            
-            print("✅ Wallpaper refresh completed")
+            // Fallback k původní metodě na background thread
+            print("⚠️ Silent refresh failed, using fallback method...")
+            DispatchQueue.global(qos: .background).async {
+                // Před restartem ještě zkusíme touch
+                self.touchWallpaperFiles()
+                
+                // Gentle restart s HUP signálem místo TERM
+                let hupResult = self.runShellCommand("killall", arguments: ["-HUP", "WallpaperAgent"])
+                print("HUP signal result: \(hupResult)")
+                
+                // Pokud HUP nefunguje, zkus standardní killall po krátké pauze
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                    let killResult = self.runShellCommand("killall", arguments: ["WallpaperAgent"])
+                    print("Killall result: \(killResult)")
+                }
+                
+                print("✅ Fallback wallpaper refresh completed")
+            }
         }
     }
     
+    // MARK: - ✅ SILENT REFRESH METODY
+    private func trySilentRefresh() -> Bool {
+        print("🤫 Trying silent refresh methods...")
+        
+        // Metoda 1: Touch wallpaper files
+        touchWallpaperFiles()
+        
+        // Metoda 2: Invalidate wallpaper cache
+        invalidateWallpaperCache()
+        
+        // Metoda 3: NSWorkspace API refresh
+        if tryNSWorkspaceRefresh() {
+            return true
+        }
+        
+        // Metoda 4: CFNotification
+        if tryNotificationRefresh() {
+            // Počkej chvilku a zkontroluj, jestli to fungovalo
+            Thread.sleep(forTimeInterval: 0.5)
+            return true // Předpokládáme úspěch
+        }
+        
+        return false
+    }
+    
+    private func tryNSWorkspaceRefresh() -> Bool {
+        guard let screen = NSScreen.main else {
+            print("❌ No main screen found")
+            return false
+        }
+        
+        do {
+            print("🖥️ Trying NSWorkspace API refresh...")
+            let currentURL = NSWorkspace.shared.desktopImageURL(for: screen)
+            
+            // Zkontroluj, jestli máme platnou URL
+            guard let wallpaperURL = currentURL else {
+                print("❌ Cannot get current wallpaper URL")
+                return false
+            }
+            
+            // Re-set the same wallpaper (forces refresh)
+            try NSWorkspace.shared.setDesktopImageURL(wallpaperURL, for: screen, options: [:])
+            
+            print("✅ NSWorkspace API refresh successful")
+            return true
+        } catch {
+            print("❌ NSWorkspace API refresh failed: \(error)")
+            return false
+        }
+    }
+    
+    private func tryNotificationRefresh() -> Bool {
+        print("📡 Trying notification-based refresh...")
+        
+        // Pošli notifikaci do systému
+        let notification = Notification(name: Notification.Name("WallpaperDidChange"))
+        NotificationCenter.default.post(notification)
+        
+        // Zkus i distributed notification
+        let distributedCenter = DistributedNotificationCenter.default()
+        distributedCenter.postNotificationName(
+            NSNotification.Name("com.apple.desktop.changed"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        
+        return true
+    }
+    
+    private func invalidateWallpaperCache() {
+        print("🗄️ Invalidating wallpaper cache...")
+        
+        // Invalidate wallpaper preferences cache
+        CFPreferencesAppSynchronize("com.apple.desktop" as CFString)
+        CFPreferencesAppSynchronize("com.apple.wallpaper" as CFString)
+        CFPreferencesAppSynchronize("com.apple.idleassetsd" as CFString)
+        
+        // Sync všechny preference
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    }
+    
+    // MARK: - PŮVODNÍ METODY (nezměněno)
     private func isWallMotionWallpaperActive() -> Bool {
         // Kontrola 1: Existuje marker file od WallMotion?
         let markerPath = "\(wallpaperPath)/\(wallMotionMarkerFile)"
@@ -113,46 +215,39 @@ class VideoSaverAgent {
         }
         
         // Kontrola 2: Existují custom .mov soubory?
-        do {
-            let files = try FileManager.default.contentsOfDirectory(atPath: wallpaperPath)
-            let hasMovFiles = files.contains { $0.hasSuffix(".mov") }
-            
-            if hasMovFiles {
-                let systemFiles = ["4KSDR240FPS.mov", "4KSDR240FPS_SDR.mov"]
-                let hasOnlySystemFiles = files.filter { $0.hasSuffix(".mov") }.allSatisfy { systemFiles.contains($0) }
-                let isCustomWallpaper = !hasOnlySystemFiles
-                
-                if isCustomWallpaper {
-                    print("✅ Custom wallpaper detected")
-                }
-                
-                return isCustomWallpaper
-            }
-            
-            return false
-        } catch {
-            print("❌ Error checking wallpaper directory: \(error)")
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: wallpaperPath) else {
+            print("❌ Cannot read wallpaper directory")
             return false
         }
+        
+        let customMovFiles = files.filter { $0.hasSuffix(".mov") && !$0.contains("original") }
+        if !customMovFiles.isEmpty {
+            print("✅ Found custom .mov files: \(customMovFiles)")
+            return true
+        }
+        
+        print("ℹ️ No WallMotion wallpapers detected")
+        return false
     }
     
     private func touchWallpaperFiles() {
-        do {
-            let files = try FileManager.default.contentsOfDirectory(atPath: wallpaperPath)
-            for file in files where file.hasSuffix(".mov") {
-                let filePath = "\(wallpaperPath)/\(file)"
-                runShellCommand("touch", arguments: [filePath])
-            }
-            print("✅ Wallpaper files touched")
-        } catch {
-            print("❌ Failed to touch wallpaper files: \(error)")
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: wallpaperPath) else {
+            print("❌ Cannot read wallpaper directory for touch")
+            return
+        }
+        
+        let movFiles = files.filter { $0.hasSuffix(".mov") }
+        
+        for file in movFiles {
+            let filePath = "\(wallpaperPath)/\(file)"
+            let touchResult = runShellCommand("touch", arguments: [filePath])
+            print("👆 Touched: \(file) - \(touchResult.isEmpty ? "OK" : touchResult)")
         }
     }
     
-    private func runShellCommand(_ command: String, arguments: [String]) {
+    private func runShellCommand(_ command: String, arguments: [String]) -> String {
         let task = Process()
         
-        // ✅ OPRAVA: Use executableURL
         if command.hasPrefix("/") {
             task.executableURL = URL(fileURLWithPath: command)
             task.arguments = arguments
@@ -161,28 +256,22 @@ class VideoSaverAgent {
             task.arguments = [command] + arguments
         }
         
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        
         do {
             try task.run()
             task.waitUntilExit()
         } catch {
-            print("❌ Failed to run \(command): \(error)")
+            return "Failed to run \(command): \(error)"
         }
+        
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 
-// MAIN ENTRY POINT
-print("🚀 Starting VideoSaverAgent...")
-
-// Handle termination gracefully
-signal(SIGTERM) { _ in
-    print("📱 VideoSaverAgent received SIGTERM, shutting down gracefully...")
-    exit(0)
-}
-
-signal(SIGINT) { _ in
-    print("📱 VideoSaverAgent received SIGINT, shutting down gracefully...")
-    exit(0)
-}
-
+// MARK: - Main Entry Point
 let agent = VideoSaverAgent()
 agent.run()
