@@ -352,10 +352,8 @@ struct ContentView: View {
                     .buttonStyle(PrimaryButtonStyle())
                 }
             } else if let youtubeURL = selectedYouTubeVideo {
-                VideoPreviewCard(
+                YouTubeVideoPreviewSection(
                     videoURL: youtubeURL,
-                    isProcessing: isProcessing,
-                    progress: progress
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 

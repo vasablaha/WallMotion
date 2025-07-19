@@ -78,8 +78,6 @@ struct YouTubeImportView: View {
                     onProcessVideo: processVideo,
                     onStartOver: resetImport
                 )
-                
-                YouTubeDebugInfoSection(importManager: importManager)
             }
             .padding(30)
         }
