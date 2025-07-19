@@ -105,8 +105,7 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.ytDlpNotFound
         }
         
-        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
-        guard let ytdlpPath = ytdlpPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
             throw YouTubeError.ytDlpNotFound
         }
         
@@ -190,8 +189,7 @@ class YouTubeImportManager: ObservableObject {
         let baseFilename = "youtube_video_\(uniqueID)"
         let outputTemplate = tempDirectory.appendingPathComponent("\(baseFilename).%(ext)s").path
         
-        let ytdlpPaths = ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]
-        guard let ytdlpPath = ytdlpPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
             throw YouTubeError.ytDlpNotFound
         }
         
@@ -461,8 +459,7 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.ffmpegNotFound
         }
         
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
             throw YouTubeError.ffmpegNotFound
         }
         

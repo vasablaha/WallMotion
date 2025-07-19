@@ -170,14 +170,44 @@ class DependenciesManager: ObservableObject {
     // MARK: - Instalace s admin oprávněními
     
     private func installWithAdminRights() async throws {
-        installationMessage = "Requesting administrator privileges..."
+        installationMessage = "Installing dependencies..."
         installationProgress = 0.1
         
-        let script = createInstallationScript()
-        let scriptPath = try saveInstallationScript(script)
+        let status = checkDependencies()
         
-        // Použijeme osascript pro spuštění s admin oprávněními
-        try await runScriptWithAdminRights(scriptPath: scriptPath.path)
+        // Pokud máme Homebrew, jen nainstaluj balíčky
+        if status.homebrew {
+            try await installBrewPackages()
+        } else {
+            // Pokud nemáme Homebrew, zobraz manuální instrukce
+            await MainActor.run {
+                showHomebrewInstallationDialog()
+            }
+            throw DependencyError.homebrewNotFound
+        }
+    }
+    
+    private func installBrewPackages() async throws {
+        let brewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        guard let brewPath = brewPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            throw DependencyError.homebrewNotFound
+        }
+        
+        let status = checkDependencies()
+        
+        installationMessage = "Installing missing packages..."
+        installationProgress = 0.3
+        
+        if !status.ytdlp {
+            try await runBrewCommand(brewPath: brewPath, command: "install yt-dlp", progressStart: 0.3, progressEnd: 0.6)
+        }
+        
+        if !status.ffmpeg {
+            try await runBrewCommand(brewPath: brewPath, command: "install ffmpeg", progressStart: 0.6, progressEnd: 0.9)
+        }
+        
+        installationProgress = 1.0
+        installationMessage = "Installation completed!"
     }
     
     private func runScriptWithAdminRights(scriptPath: String) async throws {
@@ -350,6 +380,19 @@ class DependenciesManager: ObservableObject {
     private func updateProgress(_ progress: Double, _ message: String) {
         self.installationProgress = progress
         self.installationMessage = message
+    }
+    
+    // MARK: - Public Path Resolution (pro use v jiných třídách)
+    
+    func findExecutablePath(for command: String) -> String? {
+        let commonPaths = [
+            "/opt/homebrew/bin/\(command)",
+            "/usr/local/bin/\(command)",
+            "/usr/bin/\(command)",
+            "/bin/\(command)"
+        ]
+        
+        return commonPaths.first { FileManager.default.fileExists(atPath: $0) }
     }
     
     func cancelInstallation() {
