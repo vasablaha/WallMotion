@@ -187,49 +187,303 @@ class DependenciesManager: ObservableObject {
         print("🍺 Installing Homebrew...")
         installationMessage = "Installing Homebrew package manager..."
         
-        let script = """
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        """
-        
-        try await runInstallationScript(
-            script,
-            description: "Homebrew installation",
-            progressStart: 0.0,
-            progressEnd: 0.4
-        )
-        
-        // Verify Homebrew installation
+        // Kontrola, zda už není Homebrew nainstalovaný
         let homebrewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
         let homebrewExists = homebrewPaths.contains { FileManager.default.fileExists(atPath: $0) }
         
-        if !homebrewExists {
-            throw DependencyError.homebrewInstallationFailed
+        if homebrewExists {
+            installationProgress = 0.4
+            installationMessage = "Homebrew already installed ✅"
+            print("✅ Homebrew already installed")
+            return
         }
         
-        installationMessage = "Homebrew installed successfully ✅"
-        print("✅ Homebrew installed successfully")
+        // V sandboxu nemůžeme přímo instalovat Homebrew
+        // Místo toho zobrazíme uživateli instrukce a otevřeme Terminal
+        await MainActor.run {
+            showHomebrewInstallationDialog()
+        }
+        
+        throw DependencyError.permissionDenied
     }
+
     
+    @MainActor
+    private func showHomebrewInstallationDialog() {
+        let alert = NSAlert()
+        alert.messageText = "Homebrew Installation Required"
+        alert.informativeText = """
+        WallMotion needs to install Homebrew to download YouTube videos.
+        
+        Due to security restrictions, this must be done manually:
+        
+        1. Open Terminal (⌘+Space, type "Terminal")
+        2. Paste and run this command:
+        
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        3. After installation, restart WallMotion
+        
+        Would you like to:
+        """
+        
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open Terminal & Copy Command")
+        alert.addButton(withTitle: "Copy Command Only")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response = alert.runModal()
+        
+        let installCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        
+        switch response {
+        case .alertFirstButtonReturn:
+            // Open Terminal and copy command
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(installCommand, forType: .string)
+            
+            if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                NSWorkspace.shared.open(terminalURL)
+            }
+            
+        case .alertSecondButtonReturn:
+            // Copy command only
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(installCommand, forType: .string)
+            
+            let copyAlert = NSAlert()
+            copyAlert.messageText = "Command Copied!"
+            copyAlert.informativeText = "The installation command has been copied to your clipboard. Open Terminal and paste it."
+            copyAlert.addButton(withTitle: "OK")
+            copyAlert.runModal()
+            
+        default:
+            break
+        }
+    }
+
     private func installPackage(_ packageName: String, progressStart: Double, progressEnd: Double) async throws {
         print("📦 Installing \(packageName)...")
         installationMessage = "Installing \(packageName)..."
         
         let brewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
         guard let brewPath = brewPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            await MainActor.run {
+                showMissingHomebrewDialog()
+            }
             throw DependencyError.homebrewNotFound
         }
         
-        let script = "\(brewPath) install \(packageName)"
+        // Pokus o instalaci s lepším error handling
+        do {
+            try await runBrewCommand(brewPath: brewPath, command: "install \(packageName)", progressStart: progressStart, progressEnd: progressEnd)
+            installationMessage = "\(packageName) installed successfully ✅"
+            print("✅ \(packageName) installed successfully")
+        } catch {
+            // Pokud instalace selže, nabídni manuální instrukce
+            await MainActor.run {
+                showManualInstallationDialog(for: packageName, brewPath: brewPath)
+            }
+            throw error
+        }
+    }
+
+    
+    @MainActor
+    private func showMissingHomebrewDialog() {
+        let alert = NSAlert()
+        alert.messageText = "Homebrew Not Found"
+        alert.informativeText = """
+        Homebrew package manager is required but not installed.
         
-        try await runInstallationScript(
-            script,
-            description: "\(packageName) installation",
-            progressStart: progressStart,
-            progressEnd: progressEnd
-        )
+        Please install Homebrew first by running this command in Terminal:
         
-        installationMessage = "\(packageName) installed successfully ✅"
-        print("✅ \(packageName) installed successfully")
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        Then restart WallMotion.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "OK")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            let installCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(installCommand, forType: .string)
+        }
+    }
+    
+    @MainActor
+    private func showManualInstallationDialog(for packageName: String, brewPath: String) {
+        let alert = NSAlert()
+        alert.messageText = "\(packageName.capitalized) Installation Failed"
+        alert.informativeText = """
+        Automatic installation failed due to security restrictions.
+        
+        Please install \(packageName) manually by running this command in Terminal:
+        
+        \(brewPath) install \(packageName)
+        
+        Then restart WallMotion or click "Refresh Status".
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Refresh Status")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response = alert.runModal()
+        
+        switch response {
+        case .alertFirstButtonReturn:
+            // Copy command
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString("\(brewPath) install \(packageName)", forType: .string)
+            
+        case .alertSecondButtonReturn:
+            // Refresh status
+            refreshStatus()
+            
+        default:
+            break
+        }
+    }
+    
+    // Nová metoda pro spouštění brew příkazů s Swift 6 kompatibilitou
+    private func runBrewCommand(brewPath: String, command: String, progressStart: Double, progressEnd: Double) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: brewPath)
+            task.arguments = command.components(separatedBy: " ")
+            
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            task.standardOutput = outputPipe
+            task.standardError = errorPipe
+            
+            // Swift 6 compatible progress tracking using Task instead of Timer
+            let progressTask = Task { @MainActor in
+                let progressIncrement = (progressEnd - progressStart) * 0.1
+                
+                while !Task.isCancelled && task.isRunning {
+                    self.installationProgress = min(progressEnd, self.installationProgress + progressIncrement)
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                }
+            }
+            
+            task.terminationHandler = { process in
+                // Cancel progress task
+                progressTask.cancel()
+                
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                let output = String(data: outputData, encoding: .utf8) ?? ""
+                let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+                
+                Task { @MainActor in
+                    self.installationProgress = progressEnd
+                }
+                
+                if process.terminationStatus == 0 {
+                    continuation.resume()
+                } else {
+                    let error = DependencyError.installationFailed(
+                        description: command,
+                        exitCode: process.terminationStatus,
+                        output: errorOutput.isEmpty ? output : errorOutput
+                    )
+                    continuation.resume(throwing: error)
+                }
+            }
+            
+            do {
+                try task.run()
+                self.installationTask = task
+            } catch {
+                progressTask.cancel()
+                print("❌ Failed to start \(command): \(error)")
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+
+    // Přidání nové veřejné metody pro manual refresh
+    func checkAndRefreshDependencies() {
+        refreshStatus()
+        
+        let status = checkDependencies()
+        
+        if status.allInstalled {
+            Task { @MainActor in
+                let alert = NSAlert()
+                alert.messageText = "Dependencies Check"
+                alert.informativeText = "✅ All dependencies are properly installed!"
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        } else {
+            Task { @MainActor in
+                let missing = status.missing.joined(separator: ", ")
+                let alert = NSAlert()
+                alert.messageText = "Missing Dependencies"
+                alert.informativeText = "❌ Still missing: \(missing)\n\nPlease install them manually using Terminal."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Show Instructions")
+                alert.addButton(withTitle: "OK")
+                
+                if alert.runModal() == .alertFirstButtonReturn {
+                    showInstallationInstructionsDialog()
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func showInstallationInstructionsDialog() {
+        let status = checkDependencies()
+        var instructions = "Manual Installation Instructions:\n\n"
+        
+        if !status.homebrew {
+            instructions += "1. Install Homebrew:\n"
+            instructions += "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n\n"
+        }
+        
+        if !status.ytdlp {
+            instructions += "2. Install yt-dlp:\n"
+            instructions += "brew install yt-dlp\n\n"
+        }
+        
+        if !status.ffmpeg {
+            instructions += "3. Install FFmpeg:\n"
+            instructions += "brew install ffmpeg\n\n"
+        }
+        
+        instructions += "After installation, restart WallMotion or click 'Refresh Status'."
+        
+        let alert = NSAlert()
+        alert.messageText = "Installation Instructions"
+        alert.informativeText = instructions
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Copy All Commands")
+        alert.addButton(withTitle: "OK")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            var commands = ""
+            if !status.homebrew {
+                commands += "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n"
+            }
+            if !status.ytdlp {
+                commands += "brew install yt-dlp\n"
+            }
+            if !status.ffmpeg {
+                commands += "brew install ffmpeg\n"
+            }
+            
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(commands, forType: .string)
+        }
     }
     
     private func runInstallationScript(
