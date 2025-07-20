@@ -15,6 +15,24 @@ class VideoSaverAgentInstaller {
     
     func installVideoSaverAgent() async -> Bool {
         print("🚀 Installing VideoSaverAgent with quarantine handling...")
+        // Přidej na začátek installVideoSaverAgent() metody:
+        print("🔍 VideoSaver debug info:")
+        print("🔍 Bundle path: \(Bundle.main.bundlePath)")
+        print("🔍 ExecutableManager videoSaverPath: \(ExecutableManager.shared.videoSaverPath?.path ?? "nil")")
+
+        if let resourcePath = Bundle.main.resourcePath {
+            do {
+                let files = try FileManager.default.contentsOfDirectory(atPath: resourcePath)
+                print("📁 Files in Resources: \(files)")
+                
+                let videoSaverPath = "\(resourcePath)/VideoSaver"
+                let exists = FileManager.default.fileExists(atPath: videoSaverPath)
+                let isExecutable = FileManager.default.isExecutableFile(atPath: videoSaverPath)
+                print("🔍 VideoSaver at \(videoSaverPath) - exists: \(exists), executable: \(isExecutable)")
+            } catch {
+                print("❌ Error listing Resources: \(error)")
+            }
+        }
         
         // 1. Vytvoř LaunchAgents adresář
         do {

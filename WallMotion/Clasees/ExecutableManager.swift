@@ -2,14 +2,6 @@
 //  ExecutableManager.swift
 //  WallMotion
 //
-//  Created by Šimon Filípek on 20.07.2025.
-//
-
-
-//
-//  ExecutableManager.swift
-//  WallMotion
-//
 //  Centralized path resolution for embedded CLI tools
 //
 
@@ -40,11 +32,11 @@ class ExecutableManager {
             return bundleURL
         }
         
-        // Fallback to system paths only in development
-        if isDevelopment {
-            if let systemURL = getSystemExecutable(tool) {
-                return systemURL
-            }
+        // IMPORTANT: Also fallback to system paths in release for .dmg distribution
+        // This ensures the app works even if bundled executables fail due to signing/quarantine
+        print("⚠️ Bundle executable not found, trying system paths...")
+        if let systemURL = getSystemExecutable(tool) {
+            return systemURL
         }
         
         throw ExecutableError.notFound(tool)
@@ -69,24 +61,62 @@ class ExecutableManager {
     
     /// Look for executable in app bundle Resources
     private func getBundleExecutable(_ tool: String) -> URL? {
-        // Check in bundle Resources directory
-        guard let bundleURL = Bundle.main.url(forResource: tool, withExtension: nil) else {
-            print("⚠️ \(tool) not found in app bundle")
-            return nil
+        print("🔍 Looking for \(tool) in app bundle...")
+        print("🔍 Bundle path: \(Bundle.main.bundlePath)")
+        print("🔍 Resource path: \(Bundle.main.resourcePath ?? "nil")")
+        
+        // Method 1: Try Bundle.main.url(forResource:)
+        if let bundleURL = Bundle.main.url(forResource: tool, withExtension: nil) {
+            print("✅ Found \(tool) via Bundle.main.url: \(bundleURL.path)")
+            
+            // Verify it's executable
+            if FileManager.default.isExecutableFile(atPath: bundleURL.path) {
+                print("✅ \(tool) is executable")
+                return bundleURL
+            } else {
+                print("⚠️ \(tool) found but not executable: \(bundleURL.path)")
+            }
+        } else {
+            print("⚠️ \(tool) not found via Bundle.main.url")
         }
         
-        // Verify it's executable
-        guard FileManager.default.isExecutableFile(atPath: bundleURL.path) else {
-            print("⚠️ \(tool) found in bundle but not executable: \(bundleURL.path)")
-            return nil
+        // Method 2: Try direct path in Resources
+        if let resourcePath = Bundle.main.resourcePath {
+            let directPath = "\(resourcePath)/\(tool)"
+            print("🔍 Trying direct path: \(directPath)")
+            
+            if FileManager.default.fileExists(atPath: directPath) {
+                print("✅ Found \(tool) at direct path")
+                
+                if FileManager.default.isExecutableFile(atPath: directPath) {
+                    print("✅ \(tool) is executable at direct path")
+                    return URL(fileURLWithPath: directPath)
+                } else {
+                    print("⚠️ \(tool) found but not executable at direct path")
+                }
+            } else {
+                print("⚠️ \(tool) not found at direct path")
+            }
         }
         
-        print("✅ Found \(tool) in bundle: \(bundleURL.path)")
-        return bundleURL
+        // Method 3: List all files in Resources for debugging
+        if let resourcePath = Bundle.main.resourcePath {
+            do {
+                let files = try FileManager.default.contentsOfDirectory(atPath: resourcePath)
+                print("📁 Files in Resources: \(files)")
+            } catch {
+                print("❌ Error listing Resources: \(error)")
+            }
+        }
+        
+        print("❌ \(tool) not found in app bundle")
+        return nil
     }
     
     /// Look for executable in common system paths (development only)
     private func getSystemExecutable(_ tool: String) -> URL? {
+        print("🔍 Looking for \(tool) in system paths...")
+        
         let systemPaths = [
             "/opt/homebrew/bin/\(tool)",
             "/usr/local/bin/\(tool)",
@@ -95,6 +125,7 @@ class ExecutableManager {
         ]
         
         for path in systemPaths {
+            print("🔍 Checking system path: \(path)")
             if FileManager.default.isExecutableFile(atPath: path) {
                 print("✅ Found \(tool) in system: \(path)")
                 return URL(fileURLWithPath: path)
