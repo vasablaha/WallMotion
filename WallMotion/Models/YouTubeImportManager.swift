@@ -67,8 +67,8 @@ class YouTubeImportManager: ObservableObject {
     // MARK: - Convenience Methods for Dependencies
     
     func checkDependencies() -> (ytdlp: Bool, ffmpeg: Bool) {
-        let status = dependenciesManager.checkDependencies()
-        return (ytdlp: status.ytdlp, ffmpeg: status.ffmpeg)
+        let deps = ExecutableManager.shared.checkAllDependencies()
+        return (ytdlp: deps.ytdlp, ffmpeg: deps.ffmpeg)
     }
     
     func installationInstructions() -> String {
@@ -105,7 +105,7 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.ytDlpNotFound
         }
         
-        guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
+        guard let ytdlpPath = ExecutableManager.shared.ytdlpPath?.path else {
             throw YouTubeError.ytDlpNotFound
         }
         
@@ -176,9 +176,7 @@ class YouTubeImportManager: ObservableObject {
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         print("🎥 Starting YouTube download process...")
 
-        // Check dependencies
-        let deps = dependenciesManager.checkDependencies()
-        guard deps.ytdlp else {
+        guard let ytdlpPath = ExecutableManager.shared.ytdlpPath?.path else {
             throw YouTubeError.ytDlpNotFound
         }
 
@@ -459,7 +457,7 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.ffmpegNotFound
         }
         
-        guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
+        guard let ffmpegPath = ExecutableManager.shared.ffmpegPath?.path else {
             throw YouTubeError.ffmpegNotFound
         }
         

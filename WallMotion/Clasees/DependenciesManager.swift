@@ -81,27 +81,9 @@ class DependenciesManager: ObservableObject {
     
     private func checkCommand(_ command: String) -> Bool {
         print("⚙️ Checking command: \(command)")
-        
-        // Místo which použij přímou kontrolu cest
-        let commonPaths = [
-            "/opt/homebrew/bin/\(command)",
-            "/usr/local/bin/\(command)",
-            "/usr/bin/\(command)",
-            "/bin/\(command)"
-        ]
-        
-        for path in commonPaths {
-            print("⚙️ Checking path: \(path)")
-            let exists = FileManager.default.fileExists(atPath: path)
-            print("⚙️ Path \(path) exists: \(exists)")
-            if exists {
-                print("⚙️ Command \(command) found at: \(path)")
-                return true
-            }
-        }
-        
-        print("⚙️ Command \(command) not found in any common path")
-        return false
+        let isAvailable = ExecutableManager.shared.isExecutableAvailable(command)
+        print("⚙️ Command \(command) available: \(isAvailable)")
+        return isAvailable
     }
     
     func refreshStatus() {
@@ -385,14 +367,7 @@ class DependenciesManager: ObservableObject {
     // MARK: - Public Path Resolution (pro use v jiných třídách)
     
     func findExecutablePath(for command: String) -> String? {
-        let commonPaths = [
-            "/opt/homebrew/bin/\(command)",
-            "/usr/local/bin/\(command)",
-            "/usr/bin/\(command)",
-            "/bin/\(command)"
-        ]
-        
-        return commonPaths.first { FileManager.default.fileExists(atPath: $0) }
+        return try? ExecutableManager.shared.getExecutablePathString(for: command)
     }
     
     func cancelInstallation() {
