@@ -23,6 +23,12 @@ struct TutorialView: View {
     @State private var showingInstallationAlert = false
     @State private var installationError: Error?
     
+    // 🔧 Diagnostics state variables
+    @State private var diagnosticsReport = ""
+    @State private var showDiagnostics = false
+    @State private var isRunningDiagnostics = false
+    @State private var diagnosticsSuccess: Bool?
+    
     let onComplete: (() -> Void)?
     let isInSidebar: Bool
     
@@ -158,6 +164,74 @@ struct TutorialView: View {
             if let error = installationError {
                 Text(error.localizedDescription)
             }
+        }
+        .sheet(isPresented: $showDiagnostics) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                HStack {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Diagnostics Report")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("System configuration and compatibility check")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button("✕") {
+                        showDiagnostics = false
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                }
+                
+                Divider()
+                
+                // Report content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(diagnosticsReport)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
+                    }
+                }
+                
+                // Action buttons
+                HStack(spacing: 12) {
+                    Button("Copy to Clipboard") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(diagnosticsReport, forType: .string)
+                        
+                        // Visual feedback
+                        let originalTitle = "Copy to Clipboard"
+                        // Could add temporary "Copied!" feedback here
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    
+                    Spacer()
+                    
+                    Button("Close") {
+                        showDiagnostics = false
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                }
+            }
+            .padding(24)
+            .frame(width: 700, height: 500)
         }
     }
     
@@ -299,6 +373,77 @@ struct TutorialView: View {
         }
     }
     
+    // PŘIDEJTE TYTO FUNKCE DO TutorialView struktury:
+
+    private func runFullDiagnostics() {
+        isRunningDiagnostics = true
+        diagnosticsSuccess = nil
+        
+        Task {
+            do {
+                // Simulate some processing time for better UX
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                
+                let report = dependenciesManager.performDiagnostics()
+                let (processSuccess, processOutput) = await dependenciesManager.testExternalProcess()
+                
+                let fullReport = """
+                🔍 WallMotion System Diagnostics Report
+                Generated: \(Date().formatted(date: .abbreviated, time: .standard))
+                ================================================
+                
+                \(report)
+                
+                🧪 External Process Test:
+                Status: \(processSuccess ? "✅ PASSED" : "❌ FAILED")
+                \(processOutput)
+                
+                ================================================
+                📋 Copy this report when contacting support
+                """
+                
+                await MainActor.run {
+                    diagnosticsReport = fullReport
+                    diagnosticsSuccess = processSuccess
+                    isRunningDiagnostics = false
+                    showDiagnostics = true
+                }
+                
+            } catch {
+                await MainActor.run {
+                    diagnosticsReport = "❌ Diagnostics failed: \(error.localizedDescription)"
+                    diagnosticsSuccess = false
+                    isRunningDiagnostics = false
+                    showDiagnostics = true
+                }
+            }
+        }
+    }
+
+    private func testSystemPermissions() {
+        Task {
+            let (success, output) = await dependenciesManager.testExternalProcess()
+            
+            await MainActor.run {
+                let report = """
+                🔒 Quick Permission Test
+                Generated: \(Date().formatted(date: .omitted, time: .standard))
+                
+                External Process Test: \(success ? "✅ PASSED" : "❌ FAILED")
+                
+                Details:
+                \(output)
+                
+                \(success ? "✅ Your system allows WallMotion to run external tools." : "❌ Permission issues detected. External tools may not work properly.")
+                """
+                
+                diagnosticsReport = report
+                diagnosticsSuccess = success
+                showDiagnostics = true
+            }
+        }
+    }
+    
     // MARK: - Dependency Section
     
     private func dependencySection(step: TutorialStep, phase: TutorialPhase) -> some View {
@@ -404,8 +549,114 @@ struct TutorialView: View {
                     )
                 }
             }
+            // 🔧 SYSTEM DIAGNOSTICS SECTION
+                VStack(alignment: .leading, spacing: 16) {
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    HStack {
+                        Image(systemName: "stethoscope")
+                            .foregroundColor(.blue)
+                            .font(.title3)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("System Diagnostics")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Text("Check system configuration and permissions")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        if let success = diagnosticsSuccess {
+                            Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(success ? .green : .red)
+                                .font(.title3)
+                        }
+                    }
+                    
+                    // Diagnostic buttons
+                    HStack(spacing: 12) {
+                        Button(action: runFullDiagnostics) {
+                            HStack(spacing: 8) {
+                                if isRunningDiagnostics {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                } else {
+                                    Image(systemName: "magnifyingglass.circle.fill")
+                                }
+                                Text(isRunningDiagnostics ? "Running..." : "Run Full Scan")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(isRunningDiagnostics)
+                        
+                        Button(action: testSystemPermissions) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "lock.circle.fill")
+                                Text("Test Permissions")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(isRunningDiagnostics)
+                    }
+                    
+                    // Quick status overview
+                    if !diagnosticsReport.isEmpty && !isRunningDiagnostics {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Last Scan Results:")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                            
+                            Button(action: { showDiagnostics = true }) {
+                                HStack {
+                                    Text("View Detailed Report")
+                                        .font(.caption)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                }
+                                .foregroundColor(.blue)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.blue.opacity(0.05))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                    }
+                    
+                    // Help text
+                    Text("💡 Having issues? Run diagnostics to generate a detailed report you can share with support.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .padding(.top, 4)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                        )
+                )
+            }
         }
-    }
+    
     
     // MARK: - Navigation Methods
     

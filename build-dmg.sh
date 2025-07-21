@@ -28,6 +28,8 @@ fi
 echo "✅ Using certificate: $APP_CERT"
 
 # 2. Vytvoření entitlements pro hlavní aplikaci
+# V build-dmg.sh, nahraďte sekci "Creating main app entitlements" tímto:
+
 echo "📝 Creating main app entitlements..."
 cat > "$ENTITLEMENTS" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -38,15 +40,17 @@ cat > "$ENTITLEMENTS" << 'EOF'
     <true/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    <key>com.apple.security.network.client</key>
-    <true/>
     <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
     <true/>
     <key>com.apple.security.assets.movies.read-write</key>
     <true/>
     <key>com.apple.security.assets.pictures.read-write</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
     <true/>
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
@@ -54,8 +58,23 @@ cat > "$ENTITLEMENTS" << 'EOF'
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-    <key>com.apple.security.automation.apple-events</key>
+    <key>com.apple.security.inherit</key>
     <true/>
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+    <array>
+        <string>/opt/homebrew/</string>
+        <string>/usr/local/</string>
+        <string>/Library/Application Support/com.apple.idleassetsd/</string>
+    </array>
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+    <array>
+        <string>/Library/Application Support/com.apple.idleassetsd/</string>
+    </array>
+    <key>com.apple.security.temporary-exception.shared-preference.read-write</key>
+    <array>
+        <string>com.apple.Terminal</string>
+        <string>com.apple.desktop</string>
+    </array>
 </dict>
 </plist>
 EOF

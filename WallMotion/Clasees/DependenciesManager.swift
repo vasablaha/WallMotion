@@ -80,12 +80,16 @@ class DependenciesManager: ObservableObject {
     }
     
     private func checkCommand(_ command: String) -> Bool {
-        print("⚙️ Checking command: \(command)")
-        let isAvailable = ExecutableManager.shared.isExecutableAvailable(command)
-        print("⚙️ Command \(command) available: \(isAvailable)")
-        return isAvailable
+        print("⚙️ Enhanced checking command: \(command)")
+        
+        // 1. Zkus findExecutablePath (comprehensive search)
+        if findExecutablePath(for: command) != nil {
+            return true
+        }
+        
+        // 2. Fallback: zkus which command (pokud je dostupný)
+        return checkWithWhichCommand(command)
     }
-    
     func refreshStatus() {
         objectWillChange.send()
     }
@@ -121,31 +125,195 @@ class DependenciesManager: ObservableObject {
         
         isInstalling = true
         installationProgress = 0.0
-        installationMessage = "Starting installation..."
+        installationMessage = "Starting enhanced installation..."
         
-        defer {
-            isInstalling = false
-        }
+        defer { isInstalling = false }
         
         do {
-            // Použijeme sudo nebo osascript pro zvýšená oprávnění
-            try await installWithAdminRights()
+            // 1. Pre-install diagnostics
+            installationMessage = "Running pre-install diagnostics..."
+            let diagnostics = performDiagnostics()
+            print("📋 Pre-install diagnostics:\n\(diagnostics)")
             
-            // Finální ověření
+            // 2. Test external process capability
+            installationMessage = "Testing external process permissions..."
+            let (canRunProcesses, processTestOutput) = await testExternalProcess()
+            print("🧪 Process test result: \(processTestOutput)")
+            
+            if !canRunProcesses {
+                throw DependencyError.permissionDenied("Cannot run external processes. Check entitlements.")
+            }
+            
+            // 3. Enhanced installation attempt
+            try await performEnhancedInstallation()
+            
+            // 4. Post-install verification
+            installationMessage = "Verifying installation..."
             let finalStatus = checkDependencies()
+            
             if finalStatus.allInstalled {
                 installationProgress = 1.0
-                installationMessage = "All dependencies installed successfully! 🎉"
-                print("✅ All dependencies installed successfully!")
+                installationMessage = "✅ All dependencies installed successfully!"
+                
+                // Post-install diagnostics
+                let postDiagnostics = performDiagnostics()
+                print("📋 Post-install diagnostics:\n\(postDiagnostics)")
             } else {
                 throw DependencyError.installationIncomplete(missing: finalStatus.missing)
             }
             
         } catch {
             installationProgress = 0.0
-            installationMessage = "Installation failed: \(error.localizedDescription)"
-            print("❌ Installation failed: \(error)")
+            installationMessage = "❌ Installation failed: \(error.localizedDescription)"
+            
+            // Error diagnostics
+            let errorDiagnostics = performDiagnostics()
+            print("📋 Error diagnostics:\n\(errorDiagnostics)")
+            
             throw error
+        }
+    }
+
+    private func performEnhancedInstallation() async throws {
+        let status = checkDependencies()
+        
+        if status.homebrew {
+            // Máme homebrew, jen instaluj packages
+            try await installBrewPackagesEnhanced()
+        } else {
+            // Zkus automatic homebrew installation s Admin privileges
+            try await installHomebrewWithAdminRights()
+            
+            // Po instalaci homebrew zkus packages
+            try await installBrewPackagesEnhanced()
+        }
+    }
+
+    private func installHomebrewWithAdminRights() async throws {
+        installationMessage = "Installing Homebrew with administrator rights..."
+        installationProgress = 0.1
+        
+        let script = """
+        #!/bin/bash
+        export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+        
+        if ! command -v brew >/dev/null 2>&1; then
+            echo "Installing Homebrew..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            
+            # Ensure PATH is updated
+            if [[ -f "/opt/homebrew/bin/brew" ]]; then
+                eval "$(/opt/homebrew/bin/brew shellenv)"
+            elif [[ -f "/usr/local/bin/brew" ]]; then
+                eval "$(/usr/local/bin/brew shellenv)"
+            fi
+        fi
+        
+        brew --version
+        """
+        
+        try await runAdminScript(script)
+        installationProgress = 0.4
+    }
+
+    private func installBrewPackagesEnhanced() async throws {
+        guard let brewPath = findExecutablePath(for: "brew") else {
+            throw DependencyError.homebrewNotFound
+        }
+        
+        let status = checkDependencies()
+        installationMessage = "Installing missing packages..."
+        installationProgress = 0.5
+        
+        if !status.ytdlp {
+            try await runBrewCommandEnhanced(brewPath: brewPath, command: "install yt-dlp")
+            installationProgress = 0.7
+        }
+        
+        if !status.ffmpeg {
+            try await runBrewCommandEnhanced(brewPath: brewPath, command: "install ffmpeg")
+            installationProgress = 0.9
+        }
+    }
+
+    private func runBrewCommandEnhanced(brewPath: String, command: String) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: brewPath)
+                task.arguments = command.components(separatedBy: " ")
+                
+                // Enhanced environment
+                var environment = ProcessInfo.processInfo.environment
+                environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "")
+                task.environment = environment
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    if task.terminationStatus == 0 {
+                        print("✅ Brew command succeeded: \(command)")
+                        continuation.resume()
+                    } else {
+                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                        print("❌ Brew command failed: \(command)\nError: \(errorString)")
+                        
+                        let error = DependencyError.installationFailed(
+                            description: "Brew command failed: \(command)",
+                            exitCode: task.terminationStatus,
+                            output: errorString
+                        )
+                        continuation.resume(throwing: error)
+                    }
+                } catch {
+                    print("❌ Failed to run brew command: \(error)")
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func runAdminScript(_ script: String) async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let scriptURL = tempDir.appendingPathComponent("install_homebrew.sh")
+        
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        
+        // Make executable
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let appleScript = """
+                do shell script "bash '\(scriptURL.path)'" with administrator privileges
+                """
+                
+                var error: NSDictionary?
+                let script = NSAppleScript(source: appleScript)
+                let result = script?.executeAndReturnError(&error)
+                
+                // Cleanup
+                try? FileManager.default.removeItem(at: scriptURL)
+                
+                DispatchQueue.main.async {
+                    if let error = error {
+                        print("❌ Admin script error: \(error)")
+                        let nsError = NSError(domain: "AdminScript", code: -1,
+                                            userInfo: [NSLocalizedDescriptionKey: error.description])
+                        continuation.resume(throwing: nsError)
+                    } else {
+                        print("✅ Admin script completed successfully")
+                        continuation.resume()
+                    }
+                }
+            }
         }
     }
     
@@ -367,8 +535,143 @@ class DependenciesManager: ObservableObject {
     // MARK: - Public Path Resolution (pro use v jiných třídách)
     
     func findExecutablePath(for command: String) -> String? {
-        return try? ExecutableManager.shared.getExecutablePathString(for: command)
+        print("🔍 Comprehensive search for: \(command)")
+        
+        // 1. Priority: bundled tools
+        if let bundledPath = findBundledExecutable(command) {
+            print("✅ Found bundled \(command): \(bundledPath)")
+            return bundledPath
+        }
+        
+        // 2. Homebrew paths (všechny možné lokace)
+        let homebrewPaths = [
+            // Apple Silicon paths
+            "/opt/homebrew/bin/\(command)",
+            "/opt/homebrew/sbin/\(command)",
+            "/opt/homebrew/Cellar/\(command)/*/bin/\(command)", // Wildcard pro versioning
+            
+            // Intel Mac paths
+            "/usr/local/bin/\(command)",
+            "/usr/local/sbin/\(command)",
+            "/usr/local/Cellar/\(command)/*/bin/\(command)",
+            
+            // System paths
+            "/usr/bin/\(command)",
+            "/bin/\(command)",
+            "/usr/sbin/\(command)",
+            "/sbin/\(command)"
+        ]
+        
+        for pathPattern in homebrewPaths {
+            // Handle wildcard paths
+            if pathPattern.contains("*") {
+                if let resolvedPath = resolveWildcardPath(pathPattern) {
+                    print("✅ Found \(command) at wildcard path: \(resolvedPath)")
+                    return resolvedPath
+                }
+            } else {
+                // Direct path check
+                if FileManager.default.fileExists(atPath: pathPattern) &&
+                   FileManager.default.isExecutableFile(atPath: pathPattern) {
+                    print("✅ Found \(command) at: \(pathPattern)")
+                    return pathPattern
+                }
+            }
+        }
+        
+        // 3. Environment PATH search
+        if let pathEnvVar = ProcessInfo.processInfo.environment["PATH"] {
+            let pathDirs = pathEnvVar.components(separatedBy: ":")
+            for dir in pathDirs {
+                let fullPath = "\(dir)/\(command)"
+                if FileManager.default.fileExists(atPath: fullPath) &&
+                   FileManager.default.isExecutableFile(atPath: fullPath) {
+                    print("✅ Found \(command) in PATH: \(fullPath)")
+                    return fullPath
+                }
+            }
+        }
+        
+        print("❌ Command \(command) not found anywhere")
+        return nil
     }
+
+    private func findBundledExecutable(_ command: String) -> String? {
+        // Hledá bundled verze v app bundle
+        let bundlePaths = [
+            Bundle.main.path(forResource: command, ofType: nil),
+            Bundle.main.path(forResource: command, ofType: nil, inDirectory: "Dependencies"),
+            Bundle.main.path(forResource: command, ofType: nil, inDirectory: "Tools"),
+            Bundle.main.path(forResource: command, ofType: ""),
+        ].compactMap { $0 }
+        
+        for path in bundlePaths {
+            if FileManager.default.fileExists(atPath: path) &&
+               FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        
+        return nil
+    }
+
+    private func resolveWildcardPath(_ pathPattern: String) -> String? {
+        // Resolve paths like "/opt/homebrew/Cellar/ffmpeg/*/bin/ffmpeg"
+        let components = pathPattern.components(separatedBy: "/")
+        guard let wildcardIndex = components.firstIndex(of: "*") else {
+            return nil
+        }
+        
+        let beforeWildcard = components[0..<wildcardIndex].joined(separator: "/")
+        let afterWildcard = components[(wildcardIndex + 1)...].joined(separator: "/")
+        
+        do {
+            let parentDir = beforeWildcard.isEmpty ? "/" : beforeWildcard
+            let contents = try FileManager.default.contentsOfDirectory(atPath: parentDir)
+            
+            for item in contents.sorted().reversed() { // Nejnovější verze první
+                let candidatePath = "\(parentDir)/\(item)/\(afterWildcard)"
+                if FileManager.default.fileExists(atPath: candidatePath) &&
+                   FileManager.default.isExecutableFile(atPath: candidatePath) {
+                    return candidatePath
+                }
+            }
+        } catch {
+            print("❌ Error resolving wildcard path \(pathPattern): \(error)")
+        }
+        
+        return nil
+    }
+    
+    private func checkWithWhichCommand(_ command: String) -> Bool {
+        // Fallback using system 'which' command
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        task.arguments = [command]
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            if task.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !output.isEmpty {
+                    print("✅ Found \(command) via which: \(output)")
+                    return true
+                }
+            }
+        } catch {
+            print("❌ Which command failed for \(command): \(error)")
+        }
+        
+        return false
+    }
+
     
     func cancelInstallation() {
         print("🛑 Cancelling installation...")
@@ -654,7 +957,7 @@ enum DependencyError: LocalizedError {
     case homebrewInstallationFailed
     case installationFailed(description: String, exitCode: Int32, output: String)
     case installationIncomplete(missing: [String])
-    case permissionDenied
+    case permissionDenied(String)  // <- Přidejte String parameter
     case networkError
     case unsupportedSystem
     
@@ -668,12 +971,90 @@ enum DependencyError: LocalizedError {
             return "Failed to install \(description) (exit code: \(exitCode)). Output: \(output.prefix(200))"
         case .installationIncomplete(let missing):
             return "Installation incomplete. Missing: \(missing.joined(separator: ", "))"
-        case .permissionDenied:
-            return "Permission denied. Administrator privileges required."
+        case .permissionDenied(let message):  // <- Aktualizujte error description
+            return "Permission denied: \(message)"
         case .networkError:
             return "Network error during installation. Please check your internet connection."
         case .unsupportedSystem:
             return "Unsupported system configuration"
+        }
+    }
+}
+
+extension DependenciesManager {
+    // Přidejte do DependenciesManager.swift
+
+    func performDiagnostics() -> String {
+        var report = "🔍 WallMotion Dependencies Diagnostics\n"
+        report += "=====================================\n\n"
+        
+        // 1. Environment info
+        report += "📱 Environment:\n"
+        report += "• App Bundle: \(Bundle.main.bundlePath)\n"
+        report += "• Sandbox: \(isSandboxed() ? "✅ Enabled" : "❌ Disabled")\n"
+        report += "• PATH: \(ProcessInfo.processInfo.environment["PATH"] ?? "Not set")\n\n"
+        
+        // 2. Tool detection
+        report += "🔧 Tool Detection:\n"
+        for tool in ["brew", "ffmpeg", "yt-dlp"] {
+            let path = findExecutablePath(for: tool)
+            let status = path != nil ? "✅" : "❌"
+            report += "• \(tool): \(status) \(path ?? "Not found")\n"
+        }
+        report += "\n"
+        
+        // 3. Homebrew specific
+        report += "🍺 Homebrew Analysis:\n"
+        let homebrewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        for path in homebrewPaths {
+            let exists = FileManager.default.fileExists(atPath: path)
+            let executable = FileManager.default.isExecutableFile(atPath: path)
+            report += "• \(path): \(exists ? "✅ Exists" : "❌ Missing") \(executable ? "✅ Executable" : "")\n"
+        }
+        
+        // 4. Permissions test
+        report += "\n🔒 Permissions Test:\n"
+        let testPaths = ["/opt/homebrew", "/usr/local", "/Library/Application Support/com.apple.idleassetsd"]
+        for path in testPaths {
+            let readable = FileManager.default.isReadableFile(atPath: path)
+            report += "• \(path): \(readable ? "✅ Readable" : "❌ Not readable")\n"
+        }
+        
+        return report
+    }
+
+    private func isSandboxed() -> Bool {
+        let sandboxPath = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"]
+        return sandboxPath != nil
+    }
+
+    func testExternalProcess() async -> (success: Bool, output: String) {
+        // Test jestli můžeme spustit external process
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/uname")
+                task.arguments = ["-a"]
+                
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    
+                    let success = task.terminationStatus == 0
+                    let result = success ? "✅ External process test: SUCCESS\n\(output)" : "❌ External process test: FAILED"
+                    
+                    continuation.resume(returning: (success, result))
+                } catch {
+                    continuation.resume(returning: (false, "❌ External process test: ERROR - \(error)"))
+                }
+            }
         }
     }
 }
