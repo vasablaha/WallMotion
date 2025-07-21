@@ -22,12 +22,16 @@ struct TutorialView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingInstallationAlert = false
     @State private var installationError: Error?
+    @EnvironmentObject private var authManager: AuthenticationManager  // PŘIDÁNO pro user info
+
     
     // 🔧 Diagnostics state variables
     @State private var diagnosticsReport = ""
     @State private var showDiagnostics = false
     @State private var isRunningDiagnostics = false
     @State private var diagnosticsSuccess: Bool?
+    @State private var lastScanSummary = ""
+    @State private var showingScanResults = false
     
     let onComplete: (() -> Void)?
     let isInSidebar: Bool
@@ -341,7 +345,8 @@ struct TutorialView: View {
             
             // ZMĚNA: Dependency step jako normální step
             if currentStep == 0 {
-                dependencySection(step: step, phase: currentPhase)
+                DependencyDiagnosticsView()
+                    .environmentObject(authManager)
             } else if !step.imagePlaceholder.isEmpty {
                 imagePlaceholder(step.imagePlaceholder, phase: currentPhase)
             } else if step.icon == "checkmark.circle.fill" {
@@ -445,217 +450,7 @@ struct TutorialView: View {
     }
     
     // MARK: - Dependency Section
-    
-    private func dependencySection(step: TutorialStep, phase: TutorialPhase) -> some View {
-        VStack(spacing: 20) {
-            let status = dependenciesManager.checkDependencies()
-            
-            VStack(spacing: 16) {
-                // Dependency status badges
-                HStack(spacing: 16) {
-                    DependencyBadge(name: "Homebrew", isInstalled: status.homebrew)
-                    DependencyBadge(name: "yt-dlp", isInstalled: status.ytdlp)
-                    DependencyBadge(name: "FFmpeg", isInstalled: status.ffmpeg)
-                }
-                
-                // Installation section
-                if !status.allInstalled {
-                    VStack(spacing: 16) {
-                        if dependenciesManager.isInstalling {
-                            // Installation progress
-                            VStack(spacing: 12) {
-                                ProgressView(value: dependenciesManager.installationProgress)
-                                    .progressViewStyle(LinearProgressViewStyle())
-                                    .frame(height: 8)
-                                    .scaleEffect(x: 1, y: 1.5)
-                                
-                                Text(dependenciesManager.installationMessage)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                
-                                Button("Cancel Installation") {
-                                    dependenciesManager.cancelInstallation()
-                                }
-                                .buttonStyle(SecondaryButtonStyle())
-                            }
-                            .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.blue.opacity(0.1))
-                            )
-                        } else {
-                            // Installation buttons
-                            VStack(spacing: 12) {
-                                Button(action: {
-                                    Task {
-                                        await tryInstallDependencies()
-                                    }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                        Text("Install Dependencies Automatically")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                }
-                                .buttonStyle(PrimaryButtonStyle())
-                                
-                                HStack {
-                                    Button("Manual Instructions") {
-                                        showManualInstructions()
-                                    }
-                                    .buttonStyle(SecondaryButtonStyle())
-                                    
-                                    Button("Skip This Step") {
-                                        // Uživatel může přeskočit dependencies
-                                        nextStep()
-                                    }
-                                    .buttonStyle(SecondaryButtonStyle())
-                                }
-                                
-                                Text("The automatic installer will download and install Homebrew, yt-dlp, and FFmpeg for you. You can skip this step if you only want to use local video files.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.gray.opacity(0.1))
-                            )
-                        }
-                    }
-                } else {
-                    // All dependencies installed
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 40))
-                            .foregroundColor(.green)
-                        
-                        Text("All dependencies installed!")
-                            .font(.headline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.green)
-                        
-                        Text("You can now use YouTube import feature")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.green.opacity(0.1))
-                    )
-                }
-            }
-            // 🔧 SYSTEM DIAGNOSTICS SECTION
-                VStack(alignment: .leading, spacing: 16) {
-                    Divider()
-                        .padding(.vertical, 8)
-                    
-                    HStack {
-                        Image(systemName: "stethoscope")
-                            .foregroundColor(.blue)
-                            .font(.title3)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("System Diagnostics")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                            
-                            Text("Check system configuration and permissions")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        if let success = diagnosticsSuccess {
-                            Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundColor(success ? .green : .red)
-                                .font(.title3)
-                        }
-                    }
-                    
-                    // Diagnostic buttons
-                    HStack(spacing: 12) {
-                        Button(action: runFullDiagnostics) {
-                            HStack(spacing: 8) {
-                                if isRunningDiagnostics {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                } else {
-                                    Image(systemName: "magnifyingglass.circle.fill")
-                                }
-                                Text(isRunningDiagnostics ? "Running..." : "Run Full Scan")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(isRunningDiagnostics)
-                        
-                        Button(action: testSystemPermissions) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "lock.circle.fill")
-                                Text("Test Permissions")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .disabled(isRunningDiagnostics)
-                    }
-                    
-                    // Quick status overview
-                    if !diagnosticsReport.isEmpty && !isRunningDiagnostics {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Last Scan Results:")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                            
-                            Button(action: { showDiagnostics = true }) {
-                                HStack {
-                                    Text("View Detailed Report")
-                                        .font(.caption)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption2)
-                                }
-                                .foregroundColor(.blue)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.blue.opacity(0.05))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-                                )
-                        )
-                    }
-                    
-                    // Help text
-                    Text("💡 Having issues? Run diagnostics to generate a detailed report you can share with support.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .padding(.top, 4)
-                }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.05))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                        )
-                )
-            }
-        }
+
     
     
     // MARK: - Navigation Methods
@@ -868,34 +663,6 @@ struct TutorialView: View {
             endPoint: .bottomTrailing
         )
         .ignoresSafeArea()
-    }
-}
-
-// MARK: - Support Views zůstávají stejné...
-
-// MARK: - Support Views
-
-struct DependencyBadge: View {
-    let name: String
-    let isInstalled: Bool
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundColor(isInstalled ? .green : .red)
-                .font(.caption)
-            
-            Text(name)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(isInstalled ? .green : .red)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill((isInstalled ? Color.green : Color.red).opacity(0.1))
-        )
     }
 }
 
