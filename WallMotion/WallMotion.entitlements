@@ -2,62 +2,30 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Základní sandbox -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-    
-    <!-- File access permissions -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-only</key>
-    <true/>
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    
-    <!-- Wallpaper system access -->
-    <key>com.apple.security.assets.movies.read-write</key>
-    <true/>
-    <key>com.apple.security.assets.pictures.read-write</key>
-    <true/>
-    
-    <!-- Network pro YouTube downloads -->
-    <key>com.apple.security.network.client</key>
-    <true/>
-    
-    <!-- Apple Events pro system automation -->
-    <key>com.apple.security.automation.apple-events</key>
-    <true/>
-    
-    <!-- KLÍČOVÉ: External executables -->
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    
-    <!-- KLÍČOVÉ: Child process inheritance -->
-    <key>com.apple.security.inherit</key>
-    <true/>
-    
-    <!-- KLÍČOVÉ: Temporary exceptions pro homebrew -->
-    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
-    <array>
-        <string>/opt/homebrew/</string>
-        <string>/usr/local/</string>
-        <string>/Library/Application Support/com.apple.idleassetsd/</string>
-    </array>
-    
-    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
-    <array>
-        <string>/Library/Application Support/com.apple.idleassetsd/</string>
-    </array>
-    
-    <!-- KLÍČOVÉ: Spouštění external processes -->
-    <key>com.apple.security.temporary-exception.shared-preference.read-write</key>
-    <array>
-        <string>com.apple.Terminal</string>
-        <string>com.apple.desktop</string>
-    </array>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.inherit</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/opt/homebrew/</string>
+		<string>/usr/local/</string>
+		<string>/Library/Application Support/com.apple.idleassetsd/</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+	<array>
+		<string>/Library/Application Support/com.apple.idleassetsd/</string>
+	</array>
+	<key>com.apple.security.temporary-exception.shared-preference.read-write</key>
+	<array>
+		<string>com.apple.Terminal</string>
+		<string>com.apple.desktop</string>
+	</array>
 </dict>
 </plist>
