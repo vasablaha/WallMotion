@@ -117,7 +117,7 @@ cat > "$VIDEOSAVER_ENTITLEMENTS" << 'EOF'
 <plist version="1.0">
 <dict>
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.files.downloads.read-write</key>
