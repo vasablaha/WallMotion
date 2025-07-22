@@ -28,15 +28,12 @@ fi
 echo "✅ Using certificate: $APP_CERT"
 
 # 2. Vytvoření entitlements pro hlavní aplikaci
-# V build-dmg.sh, nahraďte sekci "Creating main app entitlements" tímto:
-
 echo "📝 Creating main app entitlements..."
 cat > "$ENTITLEMENTS" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Existing entitlements -->
     <key>com.apple.security.app-sandbox</key>
     <false/>
     <key>com.apple.security.files.user-selected.read-write</key>
@@ -53,8 +50,6 @@ cat > "$ENTITLEMENTS" << 'EOF'
     <true/>
     <key>com.apple.security.automation.apple-events</key>
     <true/>
-
-    <!-- 🔧 PYINSTALLER SUPPORT ENTITLEMENTS -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
@@ -63,8 +58,6 @@ cat > "$ENTITLEMENTS" << 'EOF'
     <true/>
     <key>com.apple.security.inherit</key>
     <true/>
-
-    <!-- Enhanced temp directory access for PyInstaller -->
     <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
     <array>
         <string>/opt/homebrew/</string>
@@ -74,15 +67,8 @@ cat > "$ENTITLEMENTS" << 'EOF'
         <string>/tmp/</string>
         <string>/var/folders/</string>
     </array>
-    
-    
-    <!-- KLÍČOVÉ: Povolení spouštění bundled executables -->
     <key>com.apple.security.cs.allow-relative-library-loads</key>
     <true/>
-    <key>com.apple.security.inherit</key>
-    <true/>
-    
-    <!-- Temporary exceptions pro CLI tools -->
     <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
     <array>
         <string>/opt/homebrew/</string>
@@ -90,38 +76,22 @@ cat > "$ENTITLEMENTS" << 'EOF'
         <string>/usr/bin/</string>
         <string>/bin/</string>
     </array>
-    
-    <!-- Povolení spouštění z bundle -->
     <key>com.apple.security.temporary-exception.sbpl</key>
     <string>(allow process-exec (literal "/usr/bin/xattr"))</string>
-    
-    <!-- Pro případné systémové tools -->
-    <key>com.apple.security.automation.apple-events</key>
-    <true/>
-    
-    
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
-    <key>com.apple.security.temporary-exception.sbpl</key>
-    <string>(allow process-exec (literal "/usr/bin/xcrun"))</string>
-
-    <!-- PyInstaller IPC support -->
     <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
     <array>
         <string>com.apple.system.opendirectoryd.libinfo</string>
         <string>com.apple.system.logger</string>
         <string>com.apple.system.notification_center</string>
     </array>
-
-    <!-- Enhanced shared preferences for external processes -->
     <key>com.apple.security.temporary-exception.shared-preference.read-write</key>
     <array>
         <string>com.apple.Terminal</string>
         <string>com.apple.desktop</string>
         <string>com.apple.security</string>
     </array>
-
-    <!-- Home directory access for PyInstaller temp files -->
     <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
     <array>
         <string>Library/Application Support/com.apple.idleassetsd/</string>
@@ -129,8 +99,6 @@ cat > "$ENTITLEMENTS" << 'EOF'
         <string>Library/Caches/</string>
         <string>.cache/</string>
     </array>
-
-    <!-- Process execution permissions -->
     <key>com.apple.security.temporary-exception.apple-events</key>
     <array>
         <string>com.apple.terminal</string>
@@ -139,8 +107,35 @@ cat > "$ENTITLEMENTS" << 'EOF'
     </array>
 </dict>
 </plist>
+EOF
 
-
+# 3. Vytvoření speciálních entitlements pro VideoSaver (BEZ debug entitlements)
+echo "📝 Creating VideoSaver entitlements..."
+cat > "$VIDEOSAVER_ENTITLEMENTS" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.assets.movies.read-write</key>
+    <true/>
+    <key>com.apple.security.assets.pictures.read-write</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
 EOF
 
 # 4. Kontrola aplikace
@@ -148,8 +143,6 @@ if [[ ! -d "$APP_PATH" ]]; then
     echo "❌ App not found at $APP_PATH"
     exit 1
 fi
-
-# Přidejte tuto sekci do build-dmg.sh po sekci 4 (před VideoSaver signing)
 
 # 4.5. Podepsání bundled CLI executables
 echo "✍️ Signing bundled CLI executables..."
