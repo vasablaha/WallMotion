@@ -176,7 +176,7 @@ class YouTubeImportManager: ObservableObject {
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         print("🎥 Starting YouTube download process...")
 
-        guard let ytdlpPath = ExecutableManager.shared.ytdlpPath?.path else {
+        guard (ExecutableManager.shared.ytdlpPath?.path) != nil else {
             throw YouTubeError.ytDlpNotFound
         }
 

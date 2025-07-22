@@ -297,7 +297,7 @@ class DependenciesManager: ObservableObject {
                 
                 var error: NSDictionary?
                 let script = NSAppleScript(source: appleScript)
-                let result = script?.executeAndReturnError(&error)
+                _ = script?.executeAndReturnError(&error)
                 
                 // Cleanup
                 try? FileManager.default.removeItem(at: scriptURL)
@@ -374,7 +374,7 @@ class DependenciesManager: ObservableObject {
                     self.updateProgress(0.2, "Installing Homebrew...")
                 }
                 
-                let result = script?.executeAndReturnError(&error)
+                _ = script?.executeAndReturnError(&error)
                 
                 DispatchQueue.main.async {
                     if let error = error {
