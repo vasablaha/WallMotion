@@ -98,7 +98,7 @@ class YouTubeImportManager: ObservableObject {
         return youtubePatterns.contains { url.absoluteString.contains($0) }
     }
     
-    // OPRAVENÁ FUNKCE: getVideoInfo s DependenciesManager paths
+    // ✅ OPRAVENÁ: getVideoInfo s proper thread management
         func getVideoInfo(from urlString: String) async throws -> YouTubeVideoInfo {
             print("📋 Getting video info for: \(urlString)")
             
@@ -107,136 +107,180 @@ class YouTubeImportManager: ObservableObject {
                 throw YouTubeError.invalidURL
             }
             
-            // ✅ OPRAVA: Použít DependenciesManager místo ExecutableManager
             let deps = dependenciesManager.checkDependencies()
             guard deps.ytdlp else {
-                print("❌ yt-dlp not found via DependenciesManager")
+                print("❌ yt-dlp not found")
                 throw YouTubeError.ytDlpNotFound
             }
             
-            // ✅ OPRAVA: Získat path z DependenciesManager
             guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
-                print("❌ yt-dlp path not found via DependenciesManager")
                 throw YouTubeError.ytDlpNotFound
             }
             
-            print("✅ Found yt-dlp at: \(ytdlpPath)")
-            
+            // 🔧 FIX: Run Process on background thread, return to main thread for UI
             return try await withCheckedThrowingContinuation { continuation in
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: ytdlpPath)
-                
-                task.arguments = [
-                    "--print", "%(title)s",
-                    "--print", "%(duration)s",
-                    "--print", "%(thumbnail)s",
-                    "--no-download",
-                    "--no-warnings",
-                    urlString
-                ]
-                
-                let outputPipe = Pipe()
-                let errorPipe = Pipe()
-                task.standardOutput = outputPipe
-                task.standardError = errorPipe
-                
-                do {
-                    try task.run()
-                    task.waitUntilExit()
+                // ✅ Process musí běžet na background thread
+                Task.detached {
+                    let task = Process()
+                    task.executableURL = URL(fileURLWithPath: ytdlpPath)
                     
-                    if task.terminationStatus == 0 {
-                        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                        let output = String(data: data, encoding: .utf8) ?? ""
-                        let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
-                        
-                        guard lines.count >= 3 else {
-                            print("❌ Insufficient video info lines: \(lines.count)")
-                            continuation.resume(throwing: YouTubeError.parsingError)
-                            return
-                        }
-                        
-                        let title = lines[0]
-                        let durationStr = lines[1]
-                        let thumbnail = lines[2]
-                        
-                        guard let duration = Double(durationStr) else {
-                            print("❌ Cannot parse duration: \(durationStr)")
-                            continuation.resume(throwing: YouTubeError.parsingError)
-                            return
-                        }
-                        
-                        let videoInfo = YouTubeVideoInfo(
-                            title: title,
-                            duration: duration,
-                            thumbnail: thumbnail,
-                            quality: "Unknown",
-                            url: urlString
-                        )
-                        
-                        print("✅ Video info parsed successfully: \(title)")
-                        continuation.resume(returning: videoInfo)
-                    } else {
-                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                        let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                        print("❌ yt-dlp failed: \(errorOutput)")
-                        continuation.resume(throwing: YouTubeError.downloadError(errorOutput))
+                    task.arguments = [
+                        "--print", "%(title)s",
+                        "--print", "%(duration)s",
+                        "--print", "%(thumbnail)s",
+                        "--no-download",
+                        "--no-warnings",
+                        "--no-check-certificate",
+                        urlString
+                    ]
+                    
+                    // PyInstaller environment fix
+                    var environment = ProcessInfo.processInfo.environment
+                    environment["TMPDIR"] = NSTemporaryDirectory()
+                    environment["TEMP"] = NSTemporaryDirectory()
+                    environment["TMP"] = NSTemporaryDirectory()
+                    environment["PYINSTALLER_SEMAPHORE"] = "0"
+                    environment["PYI_DISABLE_SEMAPHORE"] = "1"
+                    environment["_PYI_SPLASH_IPC"] = "0"
+                    environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+                    
+                    if let resourcePath = Bundle.main.resourcePath {
+                        let currentPath = environment["PATH"] ?? ""
+                        environment["PATH"] = "\(resourcePath):\(currentPath)"
                     }
-                } catch {
-                    print("❌ Failed to run yt-dlp: \(error)")
-                    continuation.resume(throwing: YouTubeError.downloadError(error.localizedDescription))
+                    
+                    task.environment = environment
+                    
+                    let outputPipe = Pipe()
+                    let errorPipe = Pipe()
+                    task.standardOutput = outputPipe
+                    task.standardError = errorPipe
+                    
+                    print("🚀 Starting yt-dlp on background thread...")
+                    
+                    do {
+                        try task.run()
+                        task.waitUntilExit()
+                        
+                        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        
+                        let output = String(data: outputData, encoding: .utf8) ?? ""
+                        let error = String(data: errorData, encoding: .utf8) ?? ""
+                        
+                        print("🔍 Process completed on background thread:")
+                        print("   Exit code: \(task.terminationStatus)")
+                        print("   Output length: \(output.count) chars")
+                        
+                        if task.terminationStatus == 0 && !output.isEmpty {
+                            let lines = output.components(separatedBy: .newlines)
+                                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                            
+                            if lines.count >= 3 {
+                                let title = lines[0]
+                                let durationStr = lines[1]
+                                let thumbnail = lines[2]
+                                
+                                guard let duration = Double(durationStr) else {
+                                    print("❌ Cannot parse duration: \(durationStr)")
+                                    continuation.resume(throwing: YouTubeError.invalidVideoInfo)
+                                    return
+                                }
+                                
+                                let videoInfo = YouTubeVideoInfo(
+                                    title: title,
+                                    duration: duration,
+                                    thumbnail: thumbnail,
+                                    quality: "Unknown",
+                                    url: urlString
+                                )
+                                
+                                print("✅ Video info parsed successfully: \(title)")
+                                continuation.resume(returning: videoInfo)
+                            } else {
+                                print("❌ Insufficient video info lines: \(lines.count)")
+                                continuation.resume(throwing: YouTubeError.invalidVideoInfo)
+                            }
+                        } else {
+                            print("❌ yt-dlp failed: \(error)")
+                            continuation.resume(throwing: YouTubeError.downloadFailed)
+                        }
+                        
+                    } catch {
+                        print("❌ Failed to run yt-dlp: \(error)")
+                        continuation.resume(throwing: YouTubeError.downloadFailed)
+                    }
                 }
             }
         }
-    
-    // HLAVNÍ DOWNLOAD FUNKCE - 1:1 replacement s DependenciesManager
-        func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
-            print("🎥 Starting YouTube download process with DependenciesManager...")
+    func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
+        print("🎥 Starting YouTube download on background thread...")
 
-            // ✅ OPRAVA: Použít DependenciesManager místo ExecutableManager
-            let deps = dependenciesManager.checkDependencies()
-            guard deps.ytdlp else {
-                throw YouTubeError.ytDlpNotFound
-            }
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ytdlp else {
+            throw YouTubeError.ytDlpNotFound
+        }
 
+        // ✅ UI update na main thread
+        await MainActor.run {
             isDownloading = true
             downloadProgress = 0.0
-            
-            let uniqueID = UUID().uuidString
-            let baseFilename = "youtube_video_\(uniqueID)"
-            let outputTemplate = tempDirectory.appendingPathComponent("\(baseFilename).%(ext)s").path
-            
-            // ✅ OPRAVA: Získat path z DependenciesManager
-            guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
-                throw YouTubeError.ytDlpNotFound
-            }
-            
-            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+        }
+        
+        let uniqueID = UUID().uuidString
+        let baseFilename = "youtube_video_\(uniqueID)"
+        let outputTemplate = tempDirectory.appendingPathComponent("\(baseFilename).%(ext)s").path
+        
+        guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
+            throw YouTubeError.ytDlpNotFound
+        }
+        
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            // ✅ Process na background thread
+            Task.detached {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
                 
                 task.arguments = [
-                    "-f", "bestvideo[ext=mp4][height<=2160]/bestvideo[height<=2160]/bestvideo[ext=mp4]/bestvideo",
+                    "-f", "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/bestvideo[ext=mp4]/bestvideo",
                     "--merge-output-format", "mp4",
                     "-o", outputTemplate,
                     "--no-playlist",
                     "--newline",
                     "--no-warnings",
+                    "--no-check-certificate",
                     "--retries", "3",
                     "--socket-timeout", "30",
                     "--force-ipv4",
                     urlString
                 ]
                 
+                // PyInstaller environment fix
+                var environment = ProcessInfo.processInfo.environment
+                environment["TMPDIR"] = NSTemporaryDirectory()
+                environment["TEMP"] = NSTemporaryDirectory()
+                environment["TMP"] = NSTemporaryDirectory()
+                environment["PYINSTALLER_SEMAPHORE"] = "0"
+                environment["PYI_DISABLE_SEMAPHORE"] = "1"
+                environment["_PYI_SPLASH_IPC"] = "0"
+                environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+                
+                if let resourcePath = Bundle.main.resourcePath {
+                    let currentPath = environment["PATH"] ?? ""
+                    environment["PATH"] = "\(resourcePath):\(currentPath)"
+                }
+                
+                task.environment = environment
+                
                 let outputPipe = Pipe()
                 let errorPipe = Pipe()
                 task.standardOutput = outputPipe
                 task.standardError = errorPipe
                 
-                // Use actor-isolated data storage
+                // Monitor progress on background thread
                 let outputCollector = OutputCollector()
                 let errorCollector = OutputCollector()
                 
-                // Monitor stdout for progress
                 outputPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
                     if !data.isEmpty {
@@ -246,25 +290,13 @@ class YouTubeImportManager: ObservableObject {
                             await outputCollector.append(data)
                         }
                         
-                        // Only log progress lines and errors, not all output
-                        if output.contains("[download]") && output.contains("%") {
-                            let lines = output.components(separatedBy: .newlines)
-                            for line in lines {
-                                if line.contains("[download]") && line.contains("%") {
-                                    print("📥 \(line.trimmingCharacters(in: .whitespacesAndNewlines))")
-                                    break
-                                }
-                            }
-                        }
-                        
-                        // Parse download progress on main thread
-                        DispatchQueue.main.async {
+                        // ✅ Progress update na main thread
+                        Task { @MainActor in
                             self.parseDownloadProgress(output, progressCallback: progressCallback)
                         }
                     }
                 }
                 
-                // Monitor stderr
                 errorPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
                     if !data.isEmpty {
@@ -285,37 +317,44 @@ class YouTubeImportManager: ObservableObject {
                             if let videoFile = mp4Files.first {
                                 print("✅ Video downloaded: \(videoFile.lastPathComponent)")
                                 
-                                // Check if we need to re-encode
-                                let videoProperties = await self.analyzeVideoProperties(videoFile)
-                                print("📊 Video info: \(videoProperties.qualityDescription), \(videoProperties.codec)")
-                                
-                                if self.isCodecCompatible(videoProperties.codec) {
-                                    print("✅ Codec is compatible, no re-encoding needed")
-                                    self.isDownloading = false
-                                    self.downloadedVideoURL = videoFile
-                                    continuation.resume(returning: videoFile)
-                                } else {
-                                    print("🔄 Codec \(videoProperties.codec) is not compatible, re-encoding to H.264...")
+                                // Check if we need to re-encode (on background thread)
+                                Task.detached {
+                                    let videoProperties = await self.analyzeVideoProperties(videoFile)
+                                    print("📊 Video info: \(videoProperties.qualityDescription), \(videoProperties.codec)")
                                     
-                                    // Update UI to show re-encoding status
-                                    progressCallback(0.0, "Converting to H.264 codec...")
-                                    
-                                    do {
-                                        let reEncodedURL = try await self.smartReEncodeToH264(
-                                            videoFile,
-                                            originalInfo: videoProperties,
-                                            progressCallback: progressCallback
-                                        )
-                                        
-                                        print("✅ Re-encoding completed successfully")
-                                        self.isDownloading = false
-                                        self.downloadedVideoURL = reEncodedURL
-                                        continuation.resume(returning: reEncodedURL)
-                                        
-                                    } catch {
-                                        print("❌ Re-encoding failed: \(error)")
-                                        self.isDownloading = false
-                                        continuation.resume(throwing: error)
+                                    await MainActor.run {
+                                        if self.isCodecCompatible(videoProperties.codec) {
+                                            print("✅ Codec is compatible, no re-encoding needed")
+                                            self.isDownloading = false
+                                            self.downloadedVideoURL = videoFile
+                                            continuation.resume(returning: videoFile)
+                                        } else {
+                                            print("🔄 Re-encoding needed...")
+                                            progressCallback(0.0, "Converting to H.264 codec...")
+                                            
+                                            Task {
+                                                do {
+                                                    let reEncodedURL = try await self.smartReEncodeToH264(
+                                                        videoFile,
+                                                        originalInfo: videoProperties,
+                                                        progressCallback: progressCallback
+                                                    )
+                                                    
+                                                    await MainActor.run {
+                                                        print("✅ Re-encoding completed successfully")
+                                                        self.isDownloading = false
+                                                        self.downloadedVideoURL = reEncodedURL
+                                                        continuation.resume(returning: reEncodedURL)
+                                                    }
+                                                } catch {
+                                                    await MainActor.run {
+                                                        print("❌ Re-encoding failed: \(error)")
+                                                        self.isDownloading = false
+                                                        continuation.resume(throwing: error)
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             } else {
@@ -331,9 +370,9 @@ class YouTubeImportManager: ObservableObject {
                             let errorString = await errorCollector.getString()
                             print("Error output: \(errorString)")
                             
-                            Task { @MainActor in
+                            await MainActor.run {
                                 self.isDownloading = false
-                                continuation.resume(throwing: YouTubeError.downloadError(errorString))
+                                continuation.resume(throwing: YouTubeError.downloadFailed)
                             }
                         }
                     }
@@ -341,15 +380,24 @@ class YouTubeImportManager: ObservableObject {
                 
                 do {
                     try task.run()
-                    downloadTask = task
-                    progressCallback(0.05, "Starting download...")
+                    
+                    // ✅ Store download task na main thread
+                    await MainActor.run {
+                        self.downloadTask = task
+                        progressCallback(0.05, "Starting download...")
+                    }
+                    
                 } catch {
                     print("❌ Failed to start download: \(error)")
-                    isDownloading = false
-                    continuation.resume(throwing: error)
+                    
+                    await MainActor.run {
+                        self.isDownloading = false
+                        continuation.resume(throwing: YouTubeError.downloadFailed)
+                    }
                 }
             }
         }
+    }
     
     
     func trimVideo(_ inputURL: URL, startTime: Double, endTime: Double, outputPath: URL) async throws {
@@ -534,24 +582,23 @@ class YouTubeImportManager: ObservableObject {
         }
     }
     
-    // RE-ENCODING FUNKCE s DependenciesManager - 1:1 replacement
+    // ✅ OPRAVENÁ: smartReEncodeToH264 s background thread
         func smartReEncodeToH264(_ inputURL: URL, originalInfo: VideoProperties, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
             let outputURL = tempDirectory.appendingPathComponent("h264_\(UUID().uuidString).mp4")
             
             print("🔄 Re-encoding started: \(Int(originalInfo.resolution.width))x\(Int(originalInfo.resolution.height))")
             
-            // ✅ OPRAVA: Check FFmpeg dependency pomocí DependenciesManager
             let deps = dependenciesManager.checkDependencies()
             guard deps.ffmpeg else {
                 throw YouTubeError.ffmpegNotFound
             }
             
-            // ✅ OPRAVA: Získat FFmpeg path z DependenciesManager
             guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
                 throw YouTubeError.ffmpegNotFound
             }
             
             return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                // ✅ FFmpeg na background thread
                 Task.detached {
                     let task = Process()
                     task.executableURL = URL(fileURLWithPath: ffmpegPath)
@@ -575,7 +622,6 @@ class YouTubeImportManager: ObservableObject {
                     task.standardOutput = outputPipe
                     task.standardError = errorPipe
                     
-                    // Use actor-isolated data storage
                     let outputCollector = OutputCollector()
                     let errorCollector = OutputCollector()
                     
@@ -588,8 +634,8 @@ class YouTubeImportManager: ObservableObject {
                                 await outputCollector.append(data)
                             }
                             
-                            // Parse FFmpeg progress
-                            DispatchQueue.main.async {
+                            // ✅ Progress update na main thread
+                            Task { @MainActor in
                                 self.parseFFmpegProgress(output, totalDuration: originalInfo.duration, progressCallback: progressCallback)
                             }
                         }
@@ -613,7 +659,6 @@ class YouTubeImportManager: ObservableObject {
                             continuation.resume(returning: outputURL)
                         } else {
                             print("❌ Re-encoding failed with exit code: \(task.terminationStatus)")
-                            
                             Task {
                                 let errorString = await errorCollector.getString()
                                 print("Error output: \(errorString)")
@@ -627,11 +672,12 @@ class YouTubeImportManager: ObservableObject {
                         task.waitUntilExit()
                     } catch {
                         print("❌ Failed to start re-encoding: \(error)")
-                        continuation.resume(throwing: error)
+                        continuation.resume(throwing: YouTubeError.processingFailed)
                     }
                 }
             }
         }
+
         
     
     // MARK: - Helper Methods
