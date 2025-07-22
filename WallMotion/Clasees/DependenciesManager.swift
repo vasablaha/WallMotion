@@ -646,40 +646,94 @@ class DependenciesManager: ObservableObject {
     func findExecutablePath(for command: String) -> String? {
         print("🔍 Enhanced search for: \(command)")
         
-        // 1. PRIORITA: Bundled executables (pro DMG)
+        // 1. PRIORITA: Bundled executables (zkus první)
         if let bundledPath = findBundledExecutable(command) {
             print("✅ Found bundled: \(bundledPath)")
-            return bundledPath
+            
+            // ✅ NOVÉ: Pro yt-dlp otestuj, jestli skutečně funguje
+            if command == "yt-dlp" {
+                let works = testYtDlpFunctionality(bundledPath)
+                if works {
+                    print("✅ Bundled yt-dlp works!")
+                    return bundledPath
+                } else {
+                    print("❌ Bundled yt-dlp failed, trying system fallback...")
+                }
+            } else {
+                // Pro ffmpeg a ffprobe používej bundled vždy
+                return bundledPath
+            }
         }
         
-        // 2. FALLBACK: System paths (especially for development/testing)
-        let systemPaths = [
-            "/opt/homebrew/bin/\(command)",
-            "/usr/local/bin/\(command)",
-            "/usr/bin/\(command)",
-            "/bin/\(command)"
-        ]
-        
-        for path in systemPaths {
-            print("🔍 Checking system path: \(path)")
+        // 2. FALLBACK: System paths (especially pro yt-dlp když bundled selže)
+        if let systemPath = findSystemExecutable(command) {
+            print("✅ Found system: \(systemPath)")
             
-            if FileManager.default.isExecutableFile(atPath: path) {
-                print("✅ Found system executable: \(path)")
-                
-                // DOČASNÉ: Pro testing, použij system tool
-                if command == "ffmpeg" && path.contains("homebrew") {
-                    print("🚀 Using system ffmpeg for testing: \(path)")
-                    return path
+            // Test system tool
+            if command == "yt-dlp" {
+                let works = testYtDlpFunctionality(systemPath)
+                if works {
+                    print("✅ System yt-dlp works!")
+                    return systemPath
+                } else {
+                    print("❌ System yt-dlp also failed")
                 }
-                
-                return path
+            } else {
+                return systemPath
             }
         }
         
         print("❌ \(command) not found anywhere")
         return nil
     }
-
+    
+    private func testYtDlpFunctionality(_ path: String) -> Bool {
+        print("🧪 Testing yt-dlp functionality at: \(path)")
+        
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = ["--version"]
+        
+        // Enhanced environment for PyInstaller
+        var environment = ProcessInfo.processInfo.environment
+        environment["TMPDIR"] = NSTemporaryDirectory()
+        environment["TEMP"] = NSTemporaryDirectory()
+        environment["TMP"] = NSTemporaryDirectory()
+        environment["PYINSTALLER_SEMAPHORE"] = "0"
+        environment["PYI_DISABLE_SEMAPHORE"] = "1"
+        environment["_PYI_SPLASH_IPC"] = "0"
+        environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+        environment["PYTHONPATH"] = ""  // Clear Python path
+        environment["PYTHONHOME"] = ""  // Clear Python home
+        
+        task.environment = environment
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            
+            let success = task.terminationStatus == 0 && !output.contains("Error loading Python lib")
+            
+            print("🧪 Test result: \(success ? "✅ SUCCESS" : "❌ FAILED")")
+            if !success && !output.isEmpty {
+                print("🧪 Output: \(output.prefix(200))")
+            }
+            
+            return success
+        } catch {
+            print("🧪 Test failed to run: \(error)")
+            return false
+        }
+    }
+    
+    
     private func findBundledExecutable(_ command: String) -> String? {
         print("🔍 Searching bundled executable: \(command)")
         
@@ -765,6 +819,7 @@ class DependenciesManager: ObservableObject {
         print("❌ No system \(command) found")
         return nil
     }
+
     
     private func findWithWhichCommand(_ command: String) -> String? {
         let task = Process()
@@ -793,7 +848,8 @@ class DependenciesManager: ObservableObject {
         
         return nil
     }
-
+    
+    
     private func resolveWildcardPath(_ pathPattern: String) -> String? {
         // Resolve paths like "/opt/homebrew/Cellar/ffmpeg/*/bin/ffmpeg"
         let components = pathPattern.components(separatedBy: "/")
