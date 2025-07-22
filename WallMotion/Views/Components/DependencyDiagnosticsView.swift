@@ -293,33 +293,61 @@ struct DependencyDiagnosticsView: View {
     }
     
     private var diagnosticsButtons: some View {
-        HStack(spacing: 12) {
-            Button(action: runFullDiagnostics) {
-                HStack(spacing: 8) {
-                    if isRunningDiagnostics {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .progressViewStyle(CircularProgressViewStyle())
-                    } else {
-                        Image(systemName: "magnifyingglass.circle.fill")
+        VStack(spacing: 12) { // 🔧 PŘIDÁNO: Zabalit do VStack
+            // První řada tlačítek
+            HStack(spacing: 12) {
+                Button(action: runFullDiagnostics) {
+                    HStack(spacing: 8) {
+                        if isRunningDiagnostics {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                                .progressViewStyle(CircularProgressViewStyle())
+                        } else {
+                            Image(systemName: "magnifyingglass.circle.fill")
+                        }
+                        Text(isRunningDiagnostics ? "Running..." : "Run Full Scan")
                     }
-                    Text(isRunningDiagnostics ? "Running..." : "Run Full Scan")
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isRunningDiagnostics)
+                
+                Button(action: testYouTubeTools) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.circle.fill")
+                        Text("Test YouTube Tools")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(isRunningDiagnostics)
             }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(isRunningDiagnostics)
             
-            Button(action: testSystemPermissions) {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.circle.fill")
-                    Text("Test Permissions")
+            // Druhá řada tlačítek (podmíněná)
+            if showingScanResults && diagnosticsSuccess == false {
+                HStack(spacing: 12) {
+                    Button(action: fixPermissions) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                            Text("Fix Tool Permissions")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(isRunningDiagnostics)
+                    
+                    Button(action: testSystemPermissions) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.circle.fill")
+                            Text("Test Permissions")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(isRunningDiagnostics)
                 }
-                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(isRunningDiagnostics)
-        }
+        } // 🔧 PŘIDÁNO: Uzavření VStack
     }
     
     private var diagnosticsScanResults: some View {
@@ -636,6 +664,100 @@ extension DependencyDiagnosticsView {
         }
     }
     
+    private func testYouTubeTools() {
+        isRunningDiagnostics = true
+        diagnosticsSuccess = nil
+        showingScanResults = false
+        
+        Task {
+            // Create a temporary YouTube manager for testing
+            let testManager = YouTubeImportManager()
+            
+            let (toolsWork, toolDetails) = await testManager.testBundledTools()
+            
+            await MainActor.run {
+                let summary = toolsWork ?
+                    "YouTube tools are working correctly and ready to use." :
+                    "YouTube tools have issues. Check the detailed report for fixes."
+                
+                let report = """
+                🧪 WallMotion YouTube Tools Test
+                Generated: \(Date().formatted(date: .complete, time: .standard))
+                
+                ═══════════════════════════════════════════════════════
+                📋 TOOLS TEST SUMMARY
+                ═══════════════════════════════════════════════════════
+                Status: \(toolsWork ? "✅ WORKING" : "❌ ISSUES DETECTED")
+                
+                ═══════════════════════════════════════════════════════
+                🔧 DETAILED TOOL ANALYSIS
+                ═══════════════════════════════════════════════════════
+                \(toolDetails)
+                
+                ═══════════════════════════════════════════════════════
+                🖥️ SYSTEM INFORMATION
+                ═══════════════════════════════════════════════════════
+                \(generateSystemInfo())
+                
+                ═══════════════════════════════════════════════════════
+                👤 USER INFORMATION
+                ═══════════════════════════════════════════════════════
+                \(generateUserInfo())
+                
+                ═══════════════════════════════════════════════════════
+                💡 TROUBLESHOOTING TIPS
+                ═══════════════════════════════════════════════════════
+                If tools are not working:
+                1. Click "Fix Tool Permissions" button below
+                2. Restart the application
+                3. Try the YouTube import again
+                4. If still failing, contact support with this report
+                
+                ═══════════════════════════════════════════════════════
+                📞 SUPPORT INFORMATION
+                ═══════════════════════════════════════════════════════
+                When contacting support, please include this report.
+                Report ID: WM-TOOLS-\(Date().timeIntervalSince1970.rounded())
+                ═══════════════════════════════════════════════════════
+                """
+                
+                diagnosticsReport = report
+                lastScanSummary = summary
+                diagnosticsSuccess = toolsWork
+                isRunningDiagnostics = false
+                showingScanResults = true
+            }
+        }
+    }
+    
+    private func fixPermissions() {
+        Task {
+            isRunningDiagnostics = true
+            
+            // Create a temporary YouTube manager for fixing
+            let testManager = YouTubeImportManager()
+            let success = await testManager.fixBundledToolPermissions()
+            
+            await MainActor.run {
+                let message = success ?
+                    "Tool permissions have been fixed. Please restart the app and try again." :
+                    "Failed to fix some tool permissions. Manual intervention may be required."
+                
+                // Update the summary
+                lastScanSummary = message
+                diagnosticsSuccess = success
+                isRunningDiagnostics = false
+                
+                // Show a simple alert for immediate feedback
+                let alert = NSAlert()
+                alert.messageText = success ? "Permissions Fixed" : "Fix Failed"
+                alert.informativeText = message
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+    }
+    
     private func createScanSummary(dependenciesOK: Bool, processTestOK: Bool, issueCount: Int) -> String {
         if dependenciesOK && processTestOK {
             return "All systems operational. YouTube import and video processing should work correctly."
@@ -711,4 +833,3 @@ struct DependencyBadge: View {
         )
     }
 }
-

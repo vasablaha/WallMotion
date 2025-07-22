@@ -741,3 +741,318 @@ actor OutputCollector {
         data.removeAll()
     }
 }
+
+
+extension YouTubeImportManager {
+    // MARK: - Enhanced Error Handling & Debugging
+
+    func testBundledTools() async -> (success: Bool, details: String) {
+        var results = "🧪 Testing Bundled Tools:\n"
+        results += "========================\n\n"
+        
+        // Test yt-dlp
+        if let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") {
+            results += "📺 Testing yt-dlp at: \(ytdlpPath)\n"
+            
+            // Check file properties
+            let fileManager = FileManager.default
+            let isExecutable = fileManager.isExecutableFile(atPath: ytdlpPath)
+            let fileExists = fileManager.fileExists(atPath: ytdlpPath)
+            
+            results += "  • File exists: \(fileExists ? "✅" : "❌")\n"
+            results += "  • Is executable: \(isExecutable ? "✅" : "❌")\n"
+            
+            // Try to get file attributes
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: ytdlpPath)
+                if let permissions = attributes[.posixPermissions] as? NSNumber {
+                    results += "  • Permissions: \(String(permissions.uint16Value, radix: 8))\n"
+                }
+                if let size = attributes[.size] as? NSNumber {
+                    results += "  • File size: \(size.intValue) bytes\n"
+                }
+            } catch {
+                results += "  • Error reading attributes: \(error)\n"
+            }
+            
+            // Try to run version check
+            let (versionSuccess, versionOutput) = await testToolVersion(path: ytdlpPath, args: ["--version"])
+            results += "  • Version test: \(versionSuccess ? "✅" : "❌")\n"
+            if !versionOutput.isEmpty {
+                results += "  • Output: \(versionOutput.prefix(100))\n"
+            }
+            
+            results += "\n"
+        } else {
+            results += "❌ yt-dlp path not found\n\n"
+        }
+        
+        // Test ffmpeg
+        if let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") {
+            results += "🎬 Testing ffmpeg at: \(ffmpegPath)\n"
+            
+            let fileManager = FileManager.default
+            let isExecutable = fileManager.isExecutableFile(atPath: ffmpegPath)
+            let fileExists = fileManager.fileExists(atPath: ffmpegPath)
+            
+            results += "  • File exists: \(fileExists ? "✅" : "❌")\n"
+            results += "  • Is executable: \(isExecutable ? "✅" : "❌")\n"
+            
+            // Try version check
+            let (versionSuccess, versionOutput) = await testToolVersion(path: ffmpegPath, args: ["-version"])
+            results += "  • Version test: \(versionSuccess ? "✅" : "❌")\n"
+            if !versionOutput.isEmpty {
+                results += "  • Output: \(versionOutput.prefix(100))\n"
+            }
+            
+            results += "\n"
+        } else {
+            results += "❌ ffmpeg path not found\n\n"
+        }
+        
+        // Test environment
+        results += "🌍 Environment Test:\n"
+        results += "  • Current PATH: \(ProcessInfo.processInfo.environment["PATH"] ?? "Not set")\n"
+        results += "  • Bundle path: \(Bundle.main.bundlePath)\n"
+        results += "  • Temp directory: \(tempDirectory.path)\n"
+        
+        let allSuccess = dependenciesManager.checkDependencies().allInstalled
+        return (allSuccess, results)
+    }
+
+    private func testToolVersion(path: String, args: [String]) async -> (success: Bool, output: String) {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: path)
+                task.arguments = args
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                // Set timeout
+                var completed = false
+                DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                    if !completed {
+                        task.terminate()
+                    }
+                }
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    completed = true
+                    
+                    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    
+                    let output = String(data: outputData, encoding: .utf8) ?? ""
+                    let error = String(data: errorData, encoding: .utf8) ?? ""
+                    
+                    let combinedOutput = !output.isEmpty ? output : error
+                    let success = task.terminationStatus == 0
+                    
+                    continuation.resume(returning: (success, combinedOutput))
+                } catch {
+                    completed = true
+                    continuation.resume(returning: (false, "Failed to run: \(error)"))
+                }
+            }
+        }
+    }
+
+    // Enhanced getVideoInfo with better error reporting
+    func getVideoInfoWithDebugging(from urlString: String) async throws -> YouTubeVideoInfo {
+        print("📋 Getting video info for: \(urlString)")
+        
+        guard validateYouTubeURL(urlString) else {
+            print("❌ Invalid YouTube URL")
+            throw YouTubeError.invalidURL
+        }
+        
+        // Check if yt-dlp exists
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ytdlp else {
+            print("❌ yt-dlp not found in dependency check")
+            
+            // Enhanced debugging
+            print("🔍 Running detailed tool check...")
+            let (toolsWork, toolDetails) = await testBundledTools()
+            print("Tool test results:\n\(toolDetails)")
+            
+            throw YouTubeError.ytDlpNotFound
+        }
+        
+        guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
+            print("❌ yt-dlp path not found")
+            throw YouTubeError.ytDlpNotFound
+        }
+        
+        print("✅ Found yt-dlp at: \(ytdlpPath)")
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: ytdlpPath)
+            
+            task.arguments = [
+                "--print", "%(title)s",
+                "--print", "%(duration)s",
+                "--print", "%(thumbnail)s",
+                "--no-download",
+                "--no-warnings",
+                urlString
+            ]
+            
+            // Enhanced environment setup
+            var environment = ProcessInfo.processInfo.environment
+            // Add bundle Resources to PATH in case tools need it
+            if let resourcePath = Bundle.main.resourcePath {
+                let bundlePath = "\(resourcePath)"
+                let currentPath = environment["PATH"] ?? ""
+                environment["PATH"] = "\(bundlePath):\(currentPath)"
+            }
+            task.environment = environment
+            
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            task.standardOutput = outputPipe
+            task.standardError = errorPipe
+            
+            print("🚀 Starting yt-dlp process...")
+            print("   Command: \(ytdlpPath) \(task.arguments?.joined(separator: " ") ?? "")")
+            print("   Environment PATH: \(environment["PATH"] ?? "Not set")")
+            
+            do {
+                try task.run()
+                task.waitUntilExit()
+                
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                let output = String(data: outputData, encoding: .utf8) ?? ""
+                let error = String(data: errorData, encoding: .utf8) ?? ""
+                
+                print("🔍 Process completed:")
+                print("   Exit code: \(task.terminationStatus)")
+                print("   Output length: \(output.count) chars")
+                print("   Error length: \(error.count) chars")
+                
+                if !error.isEmpty {
+                    print("   Error output: \(error.prefix(500))")
+                }
+                
+                if task.terminationStatus == 0 && !output.isEmpty {
+                    let lines = output.components(separatedBy: .newlines)
+                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    
+                    print("   Parsed lines: \(lines.count)")
+                    
+                    if lines.count >= 3 {
+                        let title = lines[0]
+                        let duration = Double(lines[1]) ?? 0
+                        let thumbnail = lines[2]
+                        
+                        let videoInfo = YouTubeVideoInfo(
+                            title: title,
+                            duration: duration,
+                            thumbnail: thumbnail,
+                            quality: "Unknown",
+                            url: urlString
+                        )
+                        
+                        print("✅ Successfully parsed video info:")
+                        print("   Title: \(title)")
+                        print("   Duration: \(duration)s")
+                        
+                        continuation.resume(returning: videoInfo)
+                        return
+                    }
+                }
+                
+                let errorString = !error.isEmpty ? error : "No output from yt-dlp"
+                print("❌ Info retrieval failed: \(errorString)")
+                continuation.resume(throwing: YouTubeError.invalidVideoInfo)
+                
+            } catch {
+                print("❌ Failed to start yt-dlp process: \(error)")
+                
+                // Additional debugging for process start failure
+                if let nsError = error as NSError? {
+                    print("   Error domain: \(nsError.domain)")
+                    print("   Error code: \(nsError.code)")
+                    print("   Error description: \(nsError.localizedDescription)")
+                    
+                    if nsError.code == 13 {
+                        print("   ⚠️ This is a permissions error (EACCES)")
+                    } else if nsError.code == 2 {
+                        print("   ⚠️ This is a 'file not found' error (ENOENT)")
+                    }
+                }
+                
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    // MARK: - Fix bundled tool permissions
+
+    func fixBundledToolPermissions() async -> Bool {
+        print("🔧 Fixing bundled tool permissions...")
+        
+        let tools = ["yt-dlp", "ffmpeg"]
+        var allFixed = true
+        
+        for tool in tools {
+            if let toolPath = dependenciesManager.findExecutablePath(for: tool),
+               toolPath.contains("Contents/Resources") { // Only fix bundled tools
+                
+                print("🔧 Fixing permissions for: \(toolPath)")
+                
+                let (success, output) = await runChmodCommand(path: toolPath)
+                if success {
+                    print("   ✅ Permissions fixed")
+                } else {
+                    print("   ❌ Failed to fix permissions: \(output)")
+                    allFixed = false
+                }
+            }
+        }
+        
+        return allFixed
+    }
+
+    private func runChmodCommand(path: String) async -> (success: Bool, output: String) {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/bin/chmod")
+                task.arguments = ["+x", path]
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    
+                    let output = String(data: outputData, encoding: .utf8) ?? ""
+                    let error = String(data: errorData, encoding: .utf8) ?? ""
+                    
+                    let success = task.terminationStatus == 0
+                    let combinedOutput = !error.isEmpty ? error : output
+                    
+                    continuation.resume(returning: (success, combinedOutput))
+                } catch {
+                    continuation.resume(returning: (false, "chmod failed: \(error)"))
+                }
+            }
+        }
+    }
+}
