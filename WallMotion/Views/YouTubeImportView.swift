@@ -6,7 +6,8 @@
 //
 
 import SwiftUI
-import AVKit
+import AVFoundation  // ✅ Pro AVURLAsset
+
 
 struct YouTubeImportView: View {
     @StateObject private var importManager = YouTubeImportManager()
