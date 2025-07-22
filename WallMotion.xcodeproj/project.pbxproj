@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		584F67A72E2F7E1D0033B81F /* WallMotion.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = 351636502E23F6FC00C8C331 /* WallMotion.app */; };
 		58541E742E27C82000C9C8D0 /* VideoSaver in CopyFiles */ = {isa = PBXBuildFile; fileRef = 58541E692E27C4C900C9C8D0 /* VideoSaver */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -45,16 +44,6 @@
 				58541E742E27C82000C9C8D0 /* VideoSaver in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-		};
-		58541E672E27C4C900C9C8D0 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = usr/share/man/man1;
-			dstSubfolderSpec = 16;
-			files = (
-				584F67A72E2F7E1D0033B81F /* WallMotion.app in CopyFiles */,
-			);
-			runOnlyForDeploymentPostprocessing = 1;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -237,7 +226,6 @@
 			buildPhases = (
 				58541E652E27C4C900C9C8D0 /* Sources */,
 				58541E662E27C4C900C9C8D0 /* Frameworks */,
-				58541E672E27C4C900C9C8D0 /* CopyFiles */,
 			);
 			buildRules = (
 			);
