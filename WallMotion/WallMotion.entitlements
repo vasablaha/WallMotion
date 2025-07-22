@@ -4,7 +4,7 @@
 <dict>
     <!-- Existing entitlements -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.files.user-selected.read-only</key>
@@ -40,6 +40,11 @@
         <string>/tmp/</string>
         <string>/var/folders/</string>
     </array>
+    
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.temporary-exception.sbpl</key>
+    <string>(allow process-exec (literal "/usr/bin/xcrun"))</string>
 
     <!-- PyInstaller IPC support -->
     <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
