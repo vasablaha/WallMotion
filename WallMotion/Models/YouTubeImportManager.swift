@@ -400,65 +400,84 @@ class YouTubeImportManager: ObservableObject {
     }
     
     
+    // MARK: - Enhanced trimVideo with runtime fixes
     func trimVideo(_ inputURL: URL, startTime: Double, endTime: Double, outputPath: URL) async throws {
-        print("✂️ Trimming video: \(startTime)s to \(endTime)s")
+        print("✂️ Enhanced trimming video: \(startTime)s to \(endTime)s")
         
-        // Check FFmpeg dependency
-        let deps = dependenciesManager.checkDependencies()
-        guard deps.ffmpeg else {
+        // KROK 1: Ensure tools are executable (runtime fix)
+        await ensureToolsAreExecutable()
+        
+        // KROK 2: Find ffmpeg
+        guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
+            print("❌ FFmpeg not found after runtime fix")
             throw YouTubeError.ffmpegNotFound
+        }
+        
+        print("🔧 Using ffmpeg at: \(ffmpegPath)")
+        
+        // KROK 3: Test ffmpeg before using it
+        let ffmpegWorks = await testTool(ffmpegPath, tool: "ffmpeg")
+        if !ffmpegWorks {
+            print("❌ FFmpeg test failed, trying to fix...")
+            await removeQuarantine(from: ffmpegPath)
+            await makeExecutable(ffmpegPath)
         }
         
         let duration = endTime - startTime
         
-        let ffmpegPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
-        guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-            throw YouTubeError.ffmpegNotFound
-        }
-        
         return try await withCheckedThrowingContinuation { continuation in
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: ffmpegPath)
-            
-            task.arguments = [
-                "-i", inputURL.path,
-                "-ss", String(startTime),
-                "-t", String(duration),
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "23",
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                "-an", // No audio for wallpapers
-                "-avoid_negative_ts", "make_zero",
-                "-y",
-                outputPath.path
-            ]
-            
-            let outputPipe = Pipe()
-            let errorPipe = Pipe()
-            task.standardOutput = outputPipe
-            task.standardError = errorPipe
-            
-            do {
-                try task.run()
-                task.waitUntilExit()
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffmpegPath)
                 
-                if task.terminationStatus == 0 {
-                    if FileManager.default.fileExists(atPath: outputPath.path) {
-                        print("✅ Video trimmed successfully")
-                        continuation.resume()
+                task.arguments = [
+                    "-i", inputURL.path,
+                    "-ss", String(startTime),
+                    "-t", String(duration),
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "23",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-an", // No audio for wallpapers
+                    "-avoid_negative_ts", "make_zero",
+                    "-y",
+                    outputPath.path
+                ]
+                
+                print("🔧 FFmpeg command: \(task.arguments?.joined(separator: " ") ?? "")")
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    if task.terminationStatus == 0 {
+                        if FileManager.default.fileExists(atPath: outputPath.path) {
+                            print("✅ Video trimmed successfully")
+                            continuation.resume()
+                        } else {
+                            print("❌ Trimmed file was not created")
+                            continuation.resume(throwing: YouTubeError.processingFailed)
+                        }
                     } else {
-                        print("❌ Trimmed file was not created")
+                        // Read error output for debugging
+                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+                        
+                        print("❌ Trimming failed with exit code: \(task.terminationStatus)")
+                        print("❌ FFmpeg error: \(errorOutput)")
+                        
                         continuation.resume(throwing: YouTubeError.processingFailed)
                     }
-                } else {
-                    print("❌ Trimming failed with exit code: \(task.terminationStatus)")
-                    continuation.resume(throwing: YouTubeError.processingFailed)
+                } catch {
+                    print("❌ Failed to start trimming: \(error)")
+                    continuation.resume(throwing: error)
                 }
-            } catch {
-                print("❌ Failed to start trimming: \(error)")
-                continuation.resume(throwing: error)
             }
         }
     }
@@ -890,7 +909,81 @@ actor OutputCollector {
 
 extension YouTubeImportManager {
     // MARK: - Enhanced Error Handling & Debugging
+    // MARK: - Runtime Quarantine Fix
+    private func ensureToolsAreExecutable() async {
+        print("🔧 Ensuring bundled tools are executable...")
+        
+        let tools = ["yt-dlp", "ffmpeg", "ffprobe"]
+        
+        for tool in tools {
+            if let bundledPath = findBundledToolPath(tool) {
+                print("🔧 Processing \(tool) at: \(bundledPath)")
+                
+                // Remove quarantine attributes
+                await removeQuarantine(from: bundledPath)
+                
+                // Make executable
+                await makeExecutable(bundledPath)
+                
+                // Verify it works
+                let works = await testTool(bundledPath, tool: tool)
+                print("🔧 \(tool) test result: \(works)")
+            }
+        }
+    }
 
+    private func findBundledToolPath(_ tool: String) -> String? {
+        guard let resourcePath = Bundle.main.resourcePath else { return nil }
+        
+        let possiblePaths = [
+            "\(resourcePath)/\(tool)",
+            "\(resourcePath)/Executables/\(tool)",
+            "\(resourcePath)/bin/\(tool)",
+            "\(resourcePath)/tools/\(tool)"
+        ]
+        
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path) {
+                print("📍 Found bundled \(tool) at: \(path)")
+                return path
+            }
+        }
+        
+        return nil
+    }
+
+    private func removeQuarantine(from path: String) async {
+        print("🏷️ Removing quarantine from: \(path)")
+        
+        let commands = [
+            ["/usr/bin/xattr", "-d", "com.apple.quarantine", path],
+            ["/usr/bin/xattr", "-c", path]  // Remove all extended attributes
+        ]
+        
+        for command in commands {
+            _ = await runShellCommand(command)
+        }
+    }
+
+    private func makeExecutable(_ path: String) async {
+        print("🔧 Making executable: \(path)")
+        _ = await runShellCommand(["/bin/chmod", "+x", path])
+    }
+
+    private func testTool(_ path: String, tool: String) async -> Bool {
+        let args: [String]
+        switch tool {
+        case "yt-dlp":
+            args = [path, "--version"]
+        case "ffmpeg", "ffprobe":
+            args = [path, "-version"]
+        default:
+            args = [path, "--version"]
+        }
+        
+        let result = await runShellCommand(args)
+        return !result.contains("ERROR") && !result.contains("Permission denied")
+    }
     // ✅ OPRAVENÁ FUNKCE: Používá DependenciesManager paths
         func testBundledTools() async -> (success: Bool, details: String) {
             var results = "🧪 Testing Tools via DependenciesManager:\n"
@@ -979,6 +1072,53 @@ extension YouTubeImportManager {
             
             return (success: overallSuccess, details: results)
         }
+    
+    private func runShellCommand(_ args: [String]) async -> String {
+        guard !args.isEmpty else { return "ERROR: Empty command" }
+        
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                
+                if args[0].starts(with: "/") {
+                    // Absolute path executable
+                    task.executableURL = URL(fileURLWithPath: args[0])
+                    task.arguments = Array(args[1...])
+                } else {
+                    // System command
+                    task.executableURL = URL(fileURLWithPath: args[0])
+                    task.arguments = Array(args[1...])
+                }
+                
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                // Timeout after 10 seconds
+                var completed = false
+                DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                    if !completed {
+                        task.terminate()
+                    }
+                }
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    completed = true
+                    
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    
+                    continuation.resume(returning: output)
+                } catch {
+                    completed = true
+                    continuation.resume(returning: "ERROR: \(error)")
+                }
+            }
+        }
+    }
+
 
     private func testToolVersion(path: String, args: [String]) async -> (success: Bool, output: String) {
         return await withCheckedContinuation { continuation in

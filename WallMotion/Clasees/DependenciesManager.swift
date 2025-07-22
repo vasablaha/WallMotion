@@ -86,14 +86,61 @@ class DependenciesManager: ObservableObject {
     private func checkCommand(_ command: String) -> Bool {
         print("⚙️ Enhanced checking command: \(command)")
         
-        // 1. Zkus findExecutablePath (comprehensive search)
-        if findExecutablePath(for: command) != nil {
+        // 1. Debug: Zkontroluj bundle structure
+        if let resourcePath = Bundle.main.resourcePath {
+            print("🔍 Bundle resource path: \(resourcePath)")
+            
+            // List všechny soubory v Resources
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(atPath: resourcePath)
+                print("🔍 Bundle contents: \(contents)")
+                
+                // Specifically check for our tools
+                for tool in ["yt-dlp", "ffmpeg", "ffprobe"] {
+                    let toolPath = "\(resourcePath)/\(tool)"
+                    let exists = FileManager.default.fileExists(atPath: toolPath)
+                    let executable = FileManager.default.isExecutableFile(atPath: toolPath)
+                    print("🔍 Tool \(tool): exists=\(exists), executable=\(executable), path=\(toolPath)")
+                    
+                    // Check permissions
+                    if exists {
+                        do {
+                            let attributes = try FileManager.default.attributesOfItem(atPath: toolPath)
+                            if let permissions = attributes[.posixPermissions] as? NSNumber {
+                                print("🔍 Tool \(tool) permissions: \(String(permissions.uint16Value, radix: 8))")
+                            }
+                        } catch {
+                            print("🔍 Error reading \(tool) attributes: \(error)")
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Error listing bundle contents: \(error)")
+            }
+        }
+        
+        // 2. Try findExecutablePath (comprehensive search)
+        if let foundPath = findExecutablePath(for: command) {
+            print("✅ Found \(command) at: \(foundPath)")
+            
+            // Test executability
+            let isExecutable = FileManager.default.isExecutableFile(atPath: foundPath)
+            print("🔧 \(command) executable test: \(isExecutable)")
+            
+            // Try to run version command
+            Task {
+                let versionResult = await testCommandVersion(foundPath, command: command)
+                print("🧪 \(command) version test: \(versionResult)")
+            }
+            
             return true
         }
         
-        // 2. Fallback: zkus which command (pokud je dostupný)
-        return checkWithWhichCommand(command)
+        print("❌ \(command) not found anywhere")
+        return false
     }
+    
+    
     func refreshStatus() {
         objectWillChange.send()
     }
@@ -120,6 +167,62 @@ class DependenciesManager: ObservableObject {
         message += "• FFmpeg: Processes and optimizes video files\n"
         
         return message
+    }
+    
+    // MARK: - Test command execution
+    private func testCommandVersion(_ path: String, command: String) async -> String {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: path)
+                
+                // Different version args for different tools
+                let versionArgs: [String]
+                switch command {
+                case "yt-dlp":
+                    versionArgs = ["--version"]
+                case "ffmpeg":
+                    versionArgs = ["-version"]
+                case "ffprobe":
+                    versionArgs = ["-version"]
+                default:
+                    versionArgs = ["--version"]
+                }
+                
+                task.arguments = versionArgs
+                
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                // Timeout protection
+                var timedOut = false
+                DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+                    if task.isRunning {
+                        task.terminate()
+                        timedOut = true
+                    }
+                }
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    if timedOut {
+                        continuation.resume(returning: "TIMEOUT")
+                        return
+                    }
+                    
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    let result = task.terminationStatus == 0 ? "SUCCESS: \(output.prefix(50))" : "FAILED (exit \(task.terminationStatus)): \(output.prefix(50))"
+                    
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(returning: "ERROR: \(error)")
+                }
+            }
+        }
     }
     
     // MARK: - Hlavní instalační metoda s admin oprávněními
@@ -538,6 +641,8 @@ class DependenciesManager: ObservableObject {
     
     // MARK: - Public Path Resolution (pro use v jiných třídách)
     
+    // Dočasně přidejte do findExecutablePath v DependenciesManager.swift
+
     func findExecutablePath(for command: String) -> String? {
         print("🔍 Enhanced search for: \(command)")
         
@@ -547,10 +652,28 @@ class DependenciesManager: ObservableObject {
             return bundledPath
         }
         
-        // 2. System paths (fallback)
-        if let systemPath = findSystemExecutable(command) {
-            print("✅ Found system: \(systemPath)")
-            return systemPath
+        // 2. FALLBACK: System paths (especially for development/testing)
+        let systemPaths = [
+            "/opt/homebrew/bin/\(command)",
+            "/usr/local/bin/\(command)",
+            "/usr/bin/\(command)",
+            "/bin/\(command)"
+        ]
+        
+        for path in systemPaths {
+            print("🔍 Checking system path: \(path)")
+            
+            if FileManager.default.isExecutableFile(atPath: path) {
+                print("✅ Found system executable: \(path)")
+                
+                // DOČASNÉ: Pro testing, použij system tool
+                if command == "ffmpeg" && path.contains("homebrew") {
+                    print("🚀 Using system ffmpeg for testing: \(path)")
+                    return path
+                }
+                
+                return path
+            }
         }
         
         print("❌ \(command) not found anywhere")
