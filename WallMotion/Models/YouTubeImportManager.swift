@@ -98,121 +98,177 @@ class YouTubeImportManager: ObservableObject {
         return youtubePatterns.contains { url.absoluteString.contains($0) }
     }
     
-    // ✅ OPRAVENÁ: getVideoInfo s proper thread management
-        func getVideoInfo(from urlString: String) async throws -> YouTubeVideoInfo {
-            print("📋 Getting video info for: \(urlString)")
-            
-            guard validateYouTubeURL(urlString) else {
-                print("❌ Invalid YouTube URL")
-                throw YouTubeError.invalidURL
-            }
-            
-            let deps = dependenciesManager.checkDependencies()
-            guard deps.ytdlp else {
-                print("❌ yt-dlp not found")
-                throw YouTubeError.ytDlpNotFound
-            }
-            
-            guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
-                throw YouTubeError.ytDlpNotFound
-            }
-            
-            // 🔧 FIX: Run Process on background thread, return to main thread for UI
-            return try await withCheckedThrowingContinuation { continuation in
-                // ✅ Process musí běžet na background thread
-                Task.detached {
-                    let task = Process()
-                    task.executableURL = URL(fileURLWithPath: ytdlpPath)
+    func getVideoInfo(from urlString: String) async throws -> YouTubeVideoInfo {
+        print("📋 Getting video info for: \(urlString)")
+        
+        guard validateYouTubeURL(urlString) else {
+            print("❌ Invalid YouTube URL")
+            throw YouTubeError.invalidURL
+        }
+        
+        let deps = dependenciesManager.checkDependencies()
+        guard deps.ytdlp else {
+            print("❌ yt-dlp not found")
+            throw YouTubeError.ytDlpNotFound
+        }
+        
+        guard let ytdlpPath = dependenciesManager.findExecutablePath(for: "yt-dlp") else {
+            throw YouTubeError.ytDlpNotFound
+        }
+        
+        print("✅ Found yt-dlp at: \(ytdlpPath)")
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            // ✅ KLÍČ: Process na background thread s enhanced environment
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ytdlpPath)
+                
+                task.arguments = [
+                    "--no-check-certificate",
+                    "--no-warnings",
+                    "--no-call-home",
+                    "--no-update",
+                    "--prefer-free-formats",
+                    "--print", "%(title)s",
+                    "--print", "%(duration)s",
+                    "--print", "%(thumbnail)s",
+                    "--no-download",
+                    urlString
+                ]
+                
+                // ✅ ENHANCED: Complete PyInstaller environment setup
+                var environment = ProcessInfo.processInfo.environment
+                
+                // PyInstaller temporary directory fixes
+                let tempDir = NSTemporaryDirectory()
+                let bundleTemp = "\(tempDir)/WallMotion-\(UUID().uuidString)"
+                
+                // Create dedicated temp directory
+                try? FileManager.default.createDirectory(atPath: bundleTemp,
+                                                       withIntermediateDirectories: true,
+                                                       attributes: nil)
+                
+                environment["TMPDIR"] = bundleTemp
+                environment["TEMP"] = bundleTemp
+                environment["TMP"] = bundleTemp
+                environment["_MEIPASS"] = bundleTemp  // PyInstaller specific
+                
+                // PyInstaller semaphore and process fixes
+                environment["PYINSTALLER_SEMAPHORE"] = "0"
+                environment["PYI_DISABLE_SEMAPHORE"] = "1"
+                environment["_PYI_SPLASH_IPC"] = "0"
+                environment["PYI_ONEFILE_CHILD"] = "1"  // Tell PyInstaller we're child process
+                
+                // macOS specific fixes
+                environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+                environment["NSAppSleepDisabled"] = "YES"
+                
+                // Python environment cleanup (prevent conflicts)
+                environment["PYTHONPATH"] = ""
+                environment["PYTHONHOME"] = ""
+                environment["PYTHON_EXEC_PREFIX"] = ""
+                environment["PYTHON_PREFIX"] = ""
+                environment["PYTHONSTARTUP"] = ""
+                environment["PYTHONOPTIMIZE"] = ""
+                environment["PYTHONDONTWRITEBYTECODE"] = "1"
+                
+                // Path setup
+                if let resourcePath = Bundle.main.resourcePath {
+                    let currentPath = environment["PATH"] ?? ""
+                    environment["PATH"] = "\(resourcePath):\(bundleTemp):\(currentPath)"
+                }
+                
+                // Security and certificate settings
+                environment["SSL_CERT_FILE"] = ""  // Let yt-dlp use its bundled certs
+                environment["SSL_CERT_DIR"] = ""
+                environment["REQUESTS_CA_BUNDLE"] = ""
+                environment["CURL_CA_BUNDLE"] = ""
+                
+                task.environment = environment
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                print("🚀 Starting yt-dlp with enhanced PyInstaller environment...")
+                print("   Temp dir: \(bundleTemp)")
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
                     
-                    task.arguments = [
-                        "--print", "%(title)s",
-                        "--print", "%(duration)s",
-                        "--print", "%(thumbnail)s",
-                        "--no-download",
-                        "--no-warnings",
-                        "--no-check-certificate",
-                        urlString
-                    ]
+                    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
                     
-                    // PyInstaller environment fix
-                    var environment = ProcessInfo.processInfo.environment
-                    environment["TMPDIR"] = NSTemporaryDirectory()
-                    environment["TEMP"] = NSTemporaryDirectory()
-                    environment["TMP"] = NSTemporaryDirectory()
-                    environment["PYINSTALLER_SEMAPHORE"] = "0"
-                    environment["PYI_DISABLE_SEMAPHORE"] = "1"
-                    environment["_PYI_SPLASH_IPC"] = "0"
-                    environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+                    let output = String(data: outputData, encoding: .utf8) ?? ""
+                    let error = String(data: errorData, encoding: .utf8) ?? ""
                     
-                    if let resourcePath = Bundle.main.resourcePath {
-                        let currentPath = environment["PATH"] ?? ""
-                        environment["PATH"] = "\(resourcePath):\(currentPath)"
+                    // Cleanup temp directory
+                    try? FileManager.default.removeItem(atPath: bundleTemp)
+                    
+                    print("🔍 Process completed:")
+                    print("   Exit code: \(task.terminationStatus)")
+                    print("   Output length: \(output.count) chars")
+                    
+                    if !error.isEmpty && error.contains("Error loading Python lib") {
+                        print("❌ PyInstaller Python lib error detected")
+                        print("   Error: \(error.prefix(200))")
+                        
+                        await MainActor.run {
+                            continuation.resume(throwing: YouTubeError.downloadError("PyInstaller Python library loading failed. Try system yt-dlp."))
+                        }
+                        return
                     }
                     
-                    task.environment = environment
-                    
-                    let outputPipe = Pipe()
-                    let errorPipe = Pipe()
-                    task.standardOutput = outputPipe
-                    task.standardError = errorPipe
-                    
-                    print("🚀 Starting yt-dlp on background thread...")
-                    
-                    do {
-                        try task.run()
-                        task.waitUntilExit()
+                    if task.terminationStatus == 0 && !output.isEmpty {
+                        let lines = output.components(separatedBy: .newlines)
+                            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                         
-                        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                        
-                        let output = String(data: outputData, encoding: .utf8) ?? ""
-                        let error = String(data: errorData, encoding: .utf8) ?? ""
-                        
-                        print("🔍 Process completed on background thread:")
-                        print("   Exit code: \(task.terminationStatus)")
-                        print("   Output length: \(output.count) chars")
-                        
-                        if task.terminationStatus == 0 && !output.isEmpty {
-                            let lines = output.components(separatedBy: .newlines)
-                                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                        if lines.count >= 3 {
+                            let title = lines[0]
+                            let duration = Double(lines[1]) ?? 0
+                            let thumbnail = lines[2]
                             
-                            if lines.count >= 3 {
-                                let title = lines[0]
-                                let durationStr = lines[1]
-                                let thumbnail = lines[2]
-                                
-                                guard let duration = Double(durationStr) else {
-                                    print("❌ Cannot parse duration: \(durationStr)")
-                                    continuation.resume(throwing: YouTubeError.invalidVideoInfo)
-                                    return
-                                }
-                                
-                                let videoInfo = YouTubeVideoInfo(
-                                    title: title,
-                                    duration: duration,
-                                    thumbnail: thumbnail,
-                                    quality: "Unknown",
-                                    url: urlString
-                                )
-                                
-                                print("✅ Video info parsed successfully: \(title)")
+                            let videoInfo = YouTubeVideoInfo(
+                                title: title,
+                                duration: duration,
+                                thumbnail: thumbnail,
+                                quality: "Unknown",
+                                url: urlString
+                            )
+                            
+                            print("✅ Successfully parsed video info:")
+                            print("   Title: \(title)")
+                            print("   Duration: \(duration)s")
+                            
+                            await MainActor.run {
                                 continuation.resume(returning: videoInfo)
-                            } else {
-                                print("❌ Insufficient video info lines: \(lines.count)")
-                                continuation.resume(throwing: YouTubeError.invalidVideoInfo)
                             }
-                        } else {
-                            print("❌ yt-dlp failed: \(error)")
-                            continuation.resume(throwing: YouTubeError.downloadFailed)
+                            return
                         }
-                        
-                    } catch {
-                        print("❌ Failed to run yt-dlp: \(error)")
-                        continuation.resume(throwing: YouTubeError.downloadFailed)
+                    }
+                    
+                    let errorString = !error.isEmpty ? error : "No output from yt-dlp"
+                    print("❌ Info retrieval failed: \(errorString.prefix(200))")
+                    
+                    await MainActor.run {
+                        continuation.resume(throwing: YouTubeError.invalidVideoInfo)
+                    }
+                    
+                } catch {
+                    print("❌ Failed to start yt-dlp process: \(error)")
+                    
+                    await MainActor.run {
+                        continuation.resume(throwing: error)
                     }
                 }
             }
         }
+    }
+    
+    
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
         print("🎥 Starting YouTube download on background thread...")
 

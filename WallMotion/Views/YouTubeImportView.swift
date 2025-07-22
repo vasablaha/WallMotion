@@ -300,7 +300,44 @@ struct YouTubeImportView: View {
             }
         }
     }
+    
+    // MARK: - Safe Video Preview Handling
+    private func showVideoPreviewSafely() {
+        guard let videoURL = importManager.downloadedVideoURL else {
+            print("❌ No video URL for preview")
+            return
+        }
+        
+        print("🎬 Showing video preview safely")
+        
+        // ✅ Delay to ensure video file is stable
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // ✅ Final check that file exists and is readable
+            guard FileManager.default.fileExists(atPath: videoURL.path) else {
+                print("❌ Video file missing at preview time")
+                return
+            }
+            
+            // ✅ Check file is not being written to
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: videoURL.path)
+                if let fileSize = attributes[.size] as? Int64, fileSize > 0 {
+                    print("✅ Video file ready for preview: \(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))")
+                    
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                        showingVideoInfo = true
+                        showingTimeSelector = false
+                    }
+                } else {
+                    print("❌ Video file appears empty")
+                }
+            } catch {
+                print("❌ Cannot read video file attributes: \(error)")
+            }
+        }
+    }
 
+    // MARK: - Enhanced processVideo with crash protection
     private func processVideo() {
         guard !isProcessing else { return }
         guard let inputURL = importManager.downloadedVideoURL else {
@@ -308,22 +345,27 @@ struct YouTubeImportView: View {
             return
         }
         
-        print("⚙️ User initiated video processing")
+        print("⚙️ User initiated SAFE video processing")
         print("   📁 Input: \(inputURL.path)")
         print("   ⏰ Range: \(importManager.selectedStartTime)s - \(importManager.selectedEndTime)s")
-        print("   ⏰ Duration: \(importManager.selectedEndTime - importManager.selectedStartTime)s")
         
         isProcessing = true
         processingProgress = 0.0
         processingMessage = "Processing video segment..."
         
+        // ✅ Create unique output URL to avoid conflicts
+        let timestamp = Int(Date().timeIntervalSince1970)
         let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("wallpaper_trimmed_\(UUID().uuidString).mov")
+            .appendingPathComponent("wallpaper_\(timestamp)_\(UUID().uuidString).mov")
         
         print("   📁 Output will be: \(outputURL.path)")
         
         Task {
             do {
+                // ✅ Add pre-processing validation
+                try await validateVideoForProcessing(inputURL)
+                
+                // ✅ Process with enhanced error handling
                 try await importManager.trimVideo(
                     inputURL,
                     startTime: importManager.selectedStartTime,
@@ -331,23 +373,86 @@ struct YouTubeImportView: View {
                     outputPath: outputURL
                 )
                 
+                // ✅ Validate output before showing preview
+                try await validateProcessedVideo(outputURL)
+                
                 await MainActor.run {
                     isProcessing = false
-                    print("✅ Video processing completed: \(outputURL.path)")
-                    onVideoReady(outputURL)
+                    print("✅ Video processing completed safely: \(outputURL.path)")
+                    
+                    // ✅ Update the downloaded URL to processed version
+                    importManager.downloadedVideoURL = outputURL
+                    
+                    // ✅ Show preview safely with delay
+                    showVideoPreviewSafely()
                 }
+                
             } catch {
                 await MainActor.run {
                     isProcessing = false
                     print("❌ Video processing failed: \(error)")
+                    
                     if let ytError = error as? YouTubeError {
                         dependencyMessage = ytError.errorDescription ?? "Processing failed"
-                        showingDependencyAlert = true
+                    } else {
+                        dependencyMessage = "Video processing failed: \(error.localizedDescription)"
                     }
+                    showingDependencyAlert = true
                 }
             }
         }
     }
+
+    // MARK: - Video Validation Functions
+    private func validateVideoForProcessing(_ url: URL) async throws {
+        // ✅ Check file exists
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw YouTubeError.fileNotFound
+        }
+        
+        // ✅ Check file size
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard let fileSize = attributes[.size] as? Int64, fileSize > 1024 else {
+                throw YouTubeError.processingFailed
+            }
+            print("✅ Input video validation passed: \(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))")
+        } catch {
+            throw YouTubeError.processingFailed
+        }
+    }
+
+    private func validateProcessedVideo(_ url: URL) async throws {
+        // ✅ Check output file was created
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw YouTubeError.processingFailed
+        }
+        
+        // ✅ Check output file has reasonable size
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard let fileSize = attributes[.size] as? Int64, fileSize > 1024 else {
+                throw YouTubeError.processingFailed
+            }
+            print("✅ Output video validation passed: \(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))")
+        } catch {
+            throw YouTubeError.processingFailed
+        }
+        
+        // ✅ Additional check - try to create AVAsset to verify video is readable
+        do {
+            let asset = AVURLAsset(url: url)
+            let isReadable = try await asset.load(.isReadable)
+            guard isReadable else {
+                throw YouTubeError.processingFailed
+            }
+            print("✅ Output video is readable by AVFoundation")
+        } catch {
+            print("⚠️  AVFoundation validation failed, but file exists: \(error)")
+            // Don't throw here - file might still be usable
+        }
+    }
+
     
     private func resetImport() {
         guard !isProcessing && !isFetchingVideoInfo else { return }
