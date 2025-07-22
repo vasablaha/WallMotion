@@ -11,14 +11,20 @@ import SwiftUI
 struct WallMotionApp: App {
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var deviceManager = DeviceManager.shared
-    
+    @StateObject private var dependenciesManager = DependenciesManager()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(authManager)
                 .environmentObject(deviceManager)
+                .environmentObject(dependenciesManager)
+
                 .onAppear {
                     setupAppearance()
+                    Task {
+                        await initializeBundledTools()
+                    }
                 }
         }
         .windowStyle(DefaultWindowStyle())
@@ -74,6 +80,20 @@ struct WallMotionApp: App {
                 }
             }
         }
+    }
+    
+    private func initializeBundledTools() async {
+        print("🚀 Initializing bundled tools for DMG distribution...")
+        
+        // Fix quarantine issues pro bundled executables
+        await dependenciesManager.fixBundledExecutablesQuarantine()
+        
+        // Refresh dependency status
+        DispatchQueue.main.async {
+            dependenciesManager.refreshStatus()
+        }
+        
+        print("✅ Bundled tools initialization complete")
     }
     
     private func setupAppearance() {

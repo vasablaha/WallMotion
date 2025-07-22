@@ -32,8 +32,14 @@ class DependenciesManager: ObservableObject {
         }
     }
     
+    // MARK: - Enhanced checkDependencies s quarantine fix
     func checkDependencies() -> DependencyStatus {
         print("🔍 Starting dependency check...")
+        
+        // NOVÉ: První spusť quarantine fix
+        Task {
+            await fixBundledExecutablesQuarantine()
+        }
         
         print("🔍 Checking Homebrew...")
         let homebrewExists = checkHomebrewInstallation()
@@ -47,13 +53,11 @@ class DependenciesManager: ObservableObject {
         let ffmpegExists = checkCommand("ffmpeg")
         print("🔍 ffmpeg result: \(ffmpegExists)")
         
-        print("🔍 Creating DependencyStatus...")
         let status = DependencyStatus(
             homebrew: homebrewExists,
             ytdlp: ytdlpExists,
             ffmpeg: ffmpegExists
         )
-        print("🔍 Dependency check complete!")
         
         return status
     }
@@ -535,81 +539,133 @@ class DependenciesManager: ObservableObject {
     // MARK: - Public Path Resolution (pro use v jiných třídách)
     
     func findExecutablePath(for command: String) -> String? {
-        print("🔍 Comprehensive search for: \(command)")
+        print("🔍 Enhanced search for: \(command)")
         
-        // 1. Priority: bundled tools
+        // 1. PRIORITA: Bundled executables (pro DMG)
         if let bundledPath = findBundledExecutable(command) {
-            print("✅ Found bundled \(command): \(bundledPath)")
+            print("✅ Found bundled: \(bundledPath)")
             return bundledPath
         }
         
-        // 2. Homebrew paths (všechny možné lokace)
-        let homebrewPaths = [
-            // Apple Silicon paths
-            "/opt/homebrew/bin/\(command)",
-            "/opt/homebrew/sbin/\(command)",
-            "/opt/homebrew/Cellar/\(command)/*/bin/\(command)", // Wildcard pro versioning
-            
-            // Intel Mac paths
-            "/usr/local/bin/\(command)",
-            "/usr/local/sbin/\(command)",
-            "/usr/local/Cellar/\(command)/*/bin/\(command)",
-            
-            // System paths
-            "/usr/bin/\(command)",
-            "/bin/\(command)",
-            "/usr/sbin/\(command)",
-            "/sbin/\(command)"
-        ]
-        
-        for pathPattern in homebrewPaths {
-            // Handle wildcard paths
-            if pathPattern.contains("*") {
-                if let resolvedPath = resolveWildcardPath(pathPattern) {
-                    print("✅ Found \(command) at wildcard path: \(resolvedPath)")
-                    return resolvedPath
-                }
-            } else {
-                // Direct path check
-                if FileManager.default.fileExists(atPath: pathPattern) &&
-                   FileManager.default.isExecutableFile(atPath: pathPattern) {
-                    print("✅ Found \(command) at: \(pathPattern)")
-                    return pathPattern
-                }
-            }
+        // 2. System paths (fallback)
+        if let systemPath = findSystemExecutable(command) {
+            print("✅ Found system: \(systemPath)")
+            return systemPath
         }
         
-        // 3. Environment PATH search
-        if let pathEnvVar = ProcessInfo.processInfo.environment["PATH"] {
-            let pathDirs = pathEnvVar.components(separatedBy: ":")
-            for dir in pathDirs {
-                let fullPath = "\(dir)/\(command)"
-                if FileManager.default.fileExists(atPath: fullPath) &&
-                   FileManager.default.isExecutableFile(atPath: fullPath) {
-                    print("✅ Found \(command) in PATH: \(fullPath)")
-                    return fullPath
-                }
-            }
-        }
-        
-        print("❌ Command \(command) not found anywhere")
+        print("❌ \(command) not found anywhere")
         return nil
     }
 
     private func findBundledExecutable(_ command: String) -> String? {
-        // Hledá bundled verze v app bundle
-        let bundlePaths = [
-            Bundle.main.path(forResource: command, ofType: nil),
-            Bundle.main.path(forResource: command, ofType: nil, inDirectory: "Dependencies"),
-            Bundle.main.path(forResource: command, ofType: nil, inDirectory: "Tools"),
-            Bundle.main.path(forResource: command, ofType: ""),
-        ].compactMap { $0 }
+        print("🔍 Searching bundled executable: \(command)")
         
-        for path in bundlePaths {
-            if FileManager.default.fileExists(atPath: path) &&
-               FileManager.default.isExecutableFile(atPath: path) {
+        guard let resourcePath = Bundle.main.resourcePath else {
+            print("❌ No resource path")
+            return nil
+        }
+        
+        // Všechny možné lokace v bundle
+        let bundledPaths = [
+            "\(resourcePath)/\(command)",
+            "\(resourcePath)/Executables/\(command)",
+            "\(resourcePath)/bin/\(command)",
+            "\(resourcePath)/tools/\(command)"
+        ]
+        
+        for path in bundledPaths {
+            print("🔍 Checking bundled path: \(path)")
+            
+            let fileManager = FileManager.default
+            
+            if fileManager.fileExists(atPath: path) {
+                print("📁 File exists at: \(path)")
+                
+                // Zkontroluj, zda je executable
+                let isExecutable = fileManager.isExecutableFile(atPath: path)
+                print("🔧 Is executable: \(isExecutable)")
+                
+                if isExecutable {
+                    print("✅ Bundled executable ready: \(path)")
+                    return path
+                } else {
+                    print("⚠️ File exists but not executable, trying to fix...")
+                    
+                    // Pokus o opravu permissions
+                    Task {
+                        await makeExecutable(path)
+                        await removeQuarantineFlag(from: path)
+                    }
+                    
+                    // Zkus znovu po chvilce
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if fileManager.isExecutableFile(atPath: path) {
+                            print("✅ Fixed bundled executable: \(path)")
+                        }
+                    }
+                    
+                    return path // Vrať i tak, možná se opraví
+                }
+            }
+        }
+        
+        print("❌ No bundled \(command) found")
+        return nil
+    }
+
+    private func findSystemExecutable(_ command: String) -> String? {
+        print("🔍 Searching system executable: \(command)")
+        
+        // Standard paths na macOS
+        let systemPaths = [
+            "/opt/homebrew/bin/\(command)",
+            "/usr/local/bin/\(command)",
+            "/usr/bin/\(command)",
+            "/bin/\(command)"
+        ]
+        
+        for path in systemPaths {
+            print("🔍 Checking system path: \(path)")
+            
+            if FileManager.default.isExecutableFile(atPath: path) {
+                print("✅ System executable found: \(path)")
                 return path
             }
+        }
+        
+        // Fallback: zkus `which` command
+        if let whichPath = findWithWhichCommand(command) {
+            print("✅ Found via which: \(whichPath)")
+            return whichPath
+        }
+        
+        print("❌ No system \(command) found")
+        return nil
+    }
+    
+    private func findWithWhichCommand(_ command: String) -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        task.arguments = [command]
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            if task.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if let path = output, !path.isEmpty {
+                    return path
+                }
+            }
+        } catch {
+            print("❌ which command failed: \(error)")
         }
         
         return nil
@@ -946,6 +1002,93 @@ class DependenciesManager: ObservableObject {
             
         default:
             break
+        }
+    }
+    
+    // MARK: - Quarantine Fix pro DMG
+    func fixBundledExecutablesQuarantine() async {
+        print("🔧 Fixing bundled executables quarantine...")
+        
+        let tools = ["yt-dlp", "ffmpeg", "ffprobe"]
+        
+        for tool in tools {
+            if let bundledPath = getBundledExecutablePath(tool) {
+                await removeQuarantineFlag(from: bundledPath)
+                await makeExecutable(bundledPath)
+            }
+        }
+    }
+
+    private func getBundledExecutablePath(_ tool: String) -> String? {
+        // Check různé možné lokace v bundle
+        let possiblePaths = [
+            Bundle.main.resourcePath?.appending("/\(tool)"),
+            Bundle.main.resourcePath?.appending("/Executables/\(tool)"),
+            Bundle.main.path(forResource: tool, ofType: nil)
+        ]
+        
+        for path in possiblePaths {
+            if let path = path, FileManager.default.fileExists(atPath: path) {
+                print("📍 Found bundled \(tool) at: \(path)")
+                return path
+            }
+        }
+        
+        print("❌ Bundled \(tool) not found")
+        return nil
+    }
+
+    private func removeQuarantineFlag(from path: String) async {
+        print("🏷️ Removing quarantine flag from: \(path)")
+        
+        let result = await runShellCommand("/usr/bin/xattr", arguments: ["-d", "com.apple.quarantine", path])
+        
+        if result.isEmpty || result.contains("No such xattr") {
+            print("✅ Quarantine flag removed or wasn't present")
+        } else if result.contains("Operation not permitted") {
+            print("⚠️ Permission denied - trying alternative method")
+            // Zkus smazat všechny extended attributes
+            _ = await runShellCommand("/usr/bin/xattr", arguments: ["-c", path])
+        } else {
+            print("⚠️ xattr result: \(result)")
+        }
+    }
+
+    private func makeExecutable(_ path: String) async {
+        print("🔧 Making executable: \(path)")
+        
+        let result = await runShellCommand("/bin/chmod", arguments: ["+x", path])
+        if result.isEmpty {
+            print("✅ Made executable")
+        } else {
+            print("⚠️ chmod result: \(result)")
+        }
+    }
+    
+    private func runShellCommand(_ command: String, arguments: [String]) async -> String {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: command)
+                task.arguments = arguments
+                
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    
+                    continuation.resume(returning: output)
+                } catch {
+                    print("❌ Failed to run command: \(error)")
+                    continuation.resume(returning: "Error: \(error)")
+                }
+            }
         }
     }
 }

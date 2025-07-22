@@ -41,6 +41,31 @@
         <string>/var/folders/</string>
     </array>
     
+    
+    <!-- KLÍČOVÉ: Povolení spouštění bundled executables -->
+    <key>com.apple.security.cs.allow-relative-library-loads</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+    
+    <!-- Temporary exceptions pro CLI tools -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+    <array>
+        <string>/opt/homebrew/</string>
+        <string>/usr/local/</string>
+        <string>/usr/bin/</string>
+        <string>/bin/</string>
+    </array>
+    
+    <!-- Povolení spouštění z bundle -->
+    <key>com.apple.security.temporary-exception.sbpl</key>
+    <string>(allow process-exec (literal "/usr/bin/xattr"))</string>
+    
+    <!-- Pro případné systémové tools -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
     <key>com.apple.security.temporary-exception.sbpl</key>

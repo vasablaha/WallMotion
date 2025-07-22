@@ -36,8 +36,9 @@ cat > "$ENTITLEMENTS" << 'EOF'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Existing entitlements -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.files.user-selected.read-only</key>
@@ -52,6 +53,8 @@ cat > "$ENTITLEMENTS" << 'EOF'
     <true/>
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+
+    <!-- 🔧 PYINSTALLER SUPPORT ENTITLEMENTS -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
@@ -60,52 +63,84 @@ cat > "$ENTITLEMENTS" << 'EOF'
     <true/>
     <key>com.apple.security.inherit</key>
     <true/>
-    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+
+    <!-- Enhanced temp directory access for PyInstaller -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
     <array>
         <string>/opt/homebrew/</string>
         <string>/usr/local/</string>
         <string>/Library/Application Support/com.apple.idleassetsd/</string>
+        <string>/private/tmp/</string>
+        <string>/tmp/</string>
+        <string>/var/folders/</string>
     </array>
-    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+    
+    
+    <!-- KLÍČOVÉ: Povolení spouštění bundled executables -->
+    <key>com.apple.security.cs.allow-relative-library-loads</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+    
+    <!-- Temporary exceptions pro CLI tools -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
     <array>
-        <string>/Library/Application Support/com.apple.idleassetsd/</string>
+        <string>/opt/homebrew/</string>
+        <string>/usr/local/</string>
+        <string>/usr/bin/</string>
+        <string>/bin/</string>
     </array>
+    
+    <!-- Povolení spouštění z bundle -->
+    <key>com.apple.security.temporary-exception.sbpl</key>
+    <string>(allow process-exec (literal "/usr/bin/xattr"))</string>
+    
+    <!-- Pro případné systémové tools -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.temporary-exception.sbpl</key>
+    <string>(allow process-exec (literal "/usr/bin/xcrun"))</string>
+
+    <!-- PyInstaller IPC support -->
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>com.apple.system.opendirectoryd.libinfo</string>
+        <string>com.apple.system.logger</string>
+        <string>com.apple.system.notification_center</string>
+    </array>
+
+    <!-- Enhanced shared preferences for external processes -->
     <key>com.apple.security.temporary-exception.shared-preference.read-write</key>
     <array>
         <string>com.apple.Terminal</string>
         <string>com.apple.desktop</string>
+        <string>com.apple.security</string>
+    </array>
+
+    <!-- Home directory access for PyInstaller temp files -->
+    <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+    <array>
+        <string>Library/Application Support/com.apple.idleassetsd/</string>
+        <string>Library/Containers/com.apple.desktop.admin.png/</string>
+        <string>Library/Caches/</string>
+        <string>.cache/</string>
+    </array>
+
+    <!-- Process execution permissions -->
+    <key>com.apple.security.temporary-exception.apple-events</key>
+    <array>
+        <string>com.apple.terminal</string>
+        <string>com.apple.systemevents</string>
+        <string>com.apple.finder</string>
     </array>
 </dict>
 </plist>
-EOF
 
-# 3. Vytvoření speciálních entitlements pro VideoSaver (BEZ debug entitlements)
-echo "📝 Creating VideoSaver entitlements..."
-cat > "$VIDEOSAVER_ENTITLEMENTS" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    <key>com.apple.security.network.client</key>
-    <true/>
-    <key>com.apple.security.assets.movies.read-write</key>
-    <true/>
-    <key>com.apple.security.assets.pictures.read-write</key>
-    <true/>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-</dict>
-</plist>
+
 EOF
 
 # 4. Kontrola aplikace
@@ -113,6 +148,61 @@ if [[ ! -d "$APP_PATH" ]]; then
     echo "❌ App not found at $APP_PATH"
     exit 1
 fi
+
+# Přidejte tuto sekci do build-dmg.sh po sekci 4 (před VideoSaver signing)
+
+# 4.5. Podepsání bundled CLI executables
+echo "✍️ Signing bundled CLI executables..."
+RESOURCES_PATH="$APP_PATH/Contents/Resources"
+
+# Seznam CLI tools k podepsání
+CLI_TOOLS=("yt-dlp" "ffmpeg" "ffprobe")
+
+for tool in "${CLI_TOOLS[@]}"; do
+    # Zkus najít tool v různých lokacích
+    TOOL_PATHS=(
+        "$RESOURCES_PATH/$tool"
+        "$RESOURCES_PATH/Executables/$tool"
+        "$RESOURCES_PATH/bin/$tool"
+        "$RESOURCES_PATH/tools/$tool"
+    )
+    
+    for tool_path in "${TOOL_PATHS[@]}"; do
+        if [[ -f "$tool_path" ]]; then
+            echo "🔧 Found $tool at: $tool_path"
+            
+            # Smaž quarantine flag
+            xattr -d com.apple.quarantine "$tool_path" 2>/dev/null || true
+            xattr -c "$tool_path" 2>/dev/null || true
+            
+            # Nastav executable permissions
+            chmod +x "$tool_path"
+            
+            # Smaž starý podpis
+            codesign --remove-signature "$tool_path" 2>/dev/null || true
+            
+            # Podepři s runtime hardening
+            echo "✍️ Signing $tool..."
+            codesign --force --timestamp --options runtime \
+                --sign "$APP_CERT" \
+                "$tool_path"
+            
+            if [ $? -eq 0 ]; then
+                echo "✅ $tool signed successfully"
+                
+                # Ověř podpis
+                codesign --verify --verbose "$tool_path"
+            else
+                echo "❌ $tool signing failed"
+                exit 1
+            fi
+            
+            break # Našli jsme tool, přejdi na další
+        fi
+    done
+done
+
+echo "✅ All CLI tools processed"
 
 echo "🧹 Deep cleaning application..."
 xattr -cr "$APP_PATH"
