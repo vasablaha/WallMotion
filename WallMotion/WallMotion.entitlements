@@ -19,6 +19,9 @@
     <true/>
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+    <!-- Persistent file access via bookmarks -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
 
     <!-- 🔧 PYINSTALLER SUPPORT ENTITLEMENTS -->
     <key>com.apple.security.cs.allow-jit</key>

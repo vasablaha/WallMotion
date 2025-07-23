@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		58541E742E27C82000C9C8D0 /* VideoSaver in CopyFiles */ = {isa = PBXBuildFile; fileRef = 58541E692E27C4C900C9C8D0 /* VideoSaver */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		587A0D632E311C7E000C6021 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 587A0D622E311C7E000C6021 /* AVKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 		3516365E2E23F6FE00C8C331 /* WallMotionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		351636682E23F6FE00C8C331 /* WallMotionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WallMotionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		58541E692E27C4C900C9C8D0 /* VideoSaver */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = VideoSaver; sourceTree = BUILT_PRODUCTS_DIR; };
+		587A0D622E311C7E000C6021 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = System/Library/Frameworks/AVKit.framework; sourceTree = SDKROOT; };
 		58FE65F52E2926F8005B882B /* entitlements.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = entitlements.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -96,6 +98,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				587A0D632E311C7E000C6021 /* AVKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -131,6 +134,7 @@
 				351636612E23F6FE00C8C331 /* WallMotionTests */,
 				3516366B2E23F6FE00C8C331 /* WallMotionUITests */,
 				58541E6A2E27C4C900C9C8D0 /* VideoSaver */,
+				587A0D612E311C7D000C6021 /* Frameworks */,
 				351636512E23F6FC00C8C331 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -144,6 +148,14 @@
 				58541E692E27C4C900C9C8D0 /* VideoSaver */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		587A0D612E311C7D000C6021 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				587A0D622E311C7E000C6021 /* AVKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

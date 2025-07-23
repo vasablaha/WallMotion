@@ -170,5 +170,12 @@
     <array>
         <string>background-processing</string>
     </array>
+    <!-- For video streaming from non-HTTPS sources -->
+    <key>NSAllowsArbitraryLoadsForMedia</key>
+    <true/>
+    
+    <!-- For local network video sources -->
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
 </dict>
 </plist>

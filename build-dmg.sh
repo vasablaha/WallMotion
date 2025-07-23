@@ -105,6 +105,8 @@ cat > "$ENTITLEMENTS" << 'EOF'
         <string>com.apple.systemevents</string>
         <string>com.apple.finder</string>
     </array>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
 </dict>
 </plist>
 EOF
