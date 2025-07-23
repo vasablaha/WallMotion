@@ -14,11 +14,6 @@ class DependenciesManager: ObservableObject {
     
     private var installationTask: Process?
     
-    // ✅ NOVÉ: Jednoduché flags
-    private var dependenciesChecked = false
-    private var cachedStatus: DependencyStatus?
-    private var quarantineFixed = false
-    
     struct DependencyStatus {
         let homebrew: Bool
         let ytdlp: Bool
@@ -39,87 +34,34 @@ class DependenciesManager: ObservableObject {
     
     // MARK: - Enhanced checkDependencies s quarantine fix
     func checkDependencies() -> DependencyStatus {
-         // Pokud už jsme kontrolovali, vrať cached výsledek
-         if dependenciesChecked, let cached = cachedStatus {
-             print("✅ Using cached dependency status")
-             return cached
-         }
-         
-         print("🔍 One-time dependency check...")
-         
-         // ✅ LIGHTWEIGHT: Jen file existence checks
-         let homebrewExists = quickCheckHomebrew()
-         let ytdlpExists = quickCheckCommand("yt-dlp")
-         let ffmpegExists = quickCheckCommand("ffmpeg")
-         
-         let status = DependencyStatus(
-             homebrew: homebrewExists,
-             ytdlp: ytdlpExists,
-             ffmpeg: ffmpegExists
-         )
-         
-         // Uložit do cache a označit jako zkontrolované
-         cachedStatus = status
-         dependenciesChecked = true
-         
-         print("✅ Dependencies checked once - Homebrew: \(homebrewExists), yt-dlp: \(ytdlpExists), ffmpeg: \(ffmpegExists)")
-         return status
-     }
-    
-    // ✅ 2. RYCHLÉ FILE EXISTENCE CHECKS
-    private func quickCheckHomebrew() -> Bool {
-        let homebrewPaths = [
-            "/opt/homebrew/bin/brew",
-            "/usr/local/bin/brew"
-        ]
+        print("🔍 Starting dependency check...")
         
-        return homebrewPaths.contains { FileManager.default.fileExists(atPath: $0) }
-    }
-    
-    private func quickCheckCommand(_ command: String) -> Bool {
-        // 1. Check bundled first (fastest)
-        if let bundledPath = Bundle.main.resourcePath?.appending("/\(command)"),
-           FileManager.default.fileExists(atPath: bundledPath) {
-            return true
-        }
-        
-        // 2. Check common system paths
-        let systemPaths = [
-            "/opt/homebrew/bin/\(command)",
-            "/usr/local/bin/\(command)",
-            "/usr/bin/\(command)"
-        ]
-        
-        return systemPaths.contains { FileManager.default.fileExists(atPath: $0) }
-    }
-    
-    
-    func forceRefreshDependencies() {
-            print("🔄 Force refreshing dependencies...")
-            dependenciesChecked = false
-            cachedStatus = nil
-            
-            // Znovu zkontroluj
-            _ = checkDependencies()
-        }
-    
-    
-    // ✅ 3. STARTUP INITIALIZATION - volat jednou při startu
-    func performStartupInitialization() async {
-        print("🚀 Performing one-time startup initialization...")
-        
-        // Quarantine fix jen jednou
-        if !quarantineFixed {
+        // NOVÉ: První spusť quarantine fix
+        Task {
             await fixBundledExecutablesQuarantine()
-            quarantineFixed = true
         }
         
-        // Dependency check jednou
-        _ = checkDependencies()
+        print("🔍 Checking Homebrew...")
+        let homebrewExists = checkHomebrewInstallation()
+        print("🔍 Homebrew result: \(homebrewExists)")
         
-        print("✅ Startup initialization complete")
+        print("🔍 Checking yt-dlp...")
+        let ytdlpExists = checkCommand("yt-dlp")
+        print("🔍 yt-dlp result: \(ytdlpExists)")
+        
+        print("🔍 Checking ffmpeg...")
+        let ffmpegExists = checkCommand("ffmpeg")
+        print("🔍 ffmpeg result: \(ffmpegExists)")
+        
+        let status = DependencyStatus(
+            homebrew: homebrewExists,
+            ytdlp: ytdlpExists,
+            ffmpeg: ffmpegExists
+        )
+        
+        return status
     }
-
+    
     private func checkHomebrewInstallation() -> Bool {
         print("🍺 Checking Homebrew paths...")
         let homebrewPaths = [
@@ -701,33 +643,49 @@ class DependenciesManager: ObservableObject {
     
     // Dočasně přidejte do findExecutablePath v DependenciesManager.swift
 
-    // ✅ 7. ZACHOVAT findExecutablePath ale zjednodušit
-   func findExecutablePath(for command: String) -> String? {
-       // 1. Bundled tools first
-       if let bundledPath = Bundle.main.resourcePath?.appending("/\(command)"),
-          FileManager.default.fileExists(atPath: bundledPath) &&
-          FileManager.default.isExecutableFile(atPath: bundledPath) {
-           return bundledPath
-       }
-       
-       // 2. System paths
-       let systemPaths = [
-           "/opt/homebrew/bin/\(command)",
-           "/usr/local/bin/\(command)",
-           "/usr/bin/\(command)",
-           "/bin/\(command)"
-       ]
-       
-       for path in systemPaths {
-           if FileManager.default.fileExists(atPath: path) &&
-              FileManager.default.isExecutableFile(atPath: path) {
-               return path
-           }
-       }
-       
-       return nil
-   }
-   
+    func findExecutablePath(for command: String) -> String? {
+        print("🔍 Enhanced search for: \(command)")
+        
+        // 1. PRIORITA: Bundled executables (zkus první)
+        if let bundledPath = findBundledExecutable(command) {
+            print("✅ Found bundled: \(bundledPath)")
+            
+            // ✅ NOVÉ: Pro yt-dlp otestuj, jestli skutečně funguje
+            if command == "yt-dlp" {
+                let works = testYtDlpFunctionality(bundledPath)
+                if works {
+                    print("✅ Bundled yt-dlp works!")
+                    return bundledPath
+                } else {
+                    print("❌ Bundled yt-dlp failed, trying system fallback...")
+                }
+            } else {
+                // Pro ffmpeg a ffprobe používej bundled vždy
+                return bundledPath
+            }
+        }
+        
+        // 2. FALLBACK: System paths (especially pro yt-dlp když bundled selže)
+        if let systemPath = findSystemExecutable(command) {
+            print("✅ Found system: \(systemPath)")
+            
+            // Test system tool
+            if command == "yt-dlp" {
+                let works = testYtDlpFunctionality(systemPath)
+                if works {
+                    print("✅ System yt-dlp works!")
+                    return systemPath
+                } else {
+                    print("❌ System yt-dlp also failed")
+                }
+            } else {
+                return systemPath
+            }
+        }
+        
+        print("❌ \(command) not found anywhere")
+        return nil
+    }
     
     private func testYtDlpFunctionality(_ path: String) -> Bool {
         print("🧪 Testing yt-dlp functionality at: \(path)")
@@ -1226,52 +1184,18 @@ class DependenciesManager: ObservableObject {
         }
     }
     
-    // ✅ 5. BACKGROUND QUARANTINE FIX
+    // MARK: - Quarantine Fix pro DMG
     func fixBundledExecutablesQuarantine() async {
-        print("🔒 Fixing quarantine for bundled executables...")
+        print("🔧 Fixing bundled executables quarantine...")
         
-        await withCheckedContinuation { continuation in
-            Task.detached {
-                guard let resourcePath = Bundle.main.resourcePath else {
-                    continuation.resume()
-                    return
-                }
-                
-                let tools = ["yt-dlp", "ffmpeg", "ffprobe"]
-                
-                for tool in tools {
-                    let toolPath = "\(resourcePath)/\(tool)"
-                    
-                    if FileManager.default.fileExists(atPath: toolPath) {
-                        // Quarantine removal
-                        let xattrTask = Process()
-                        xattrTask.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-                        xattrTask.arguments = ["-d", "com.apple.quarantine", toolPath]
-                        try? xattrTask.run()
-                        xattrTask.waitUntilExit()
-                        
-                        // Permissions
-                        let chmodTask = Process()
-                        chmodTask.executableURL = URL(fileURLWithPath: "/bin/chmod")
-                        chmodTask.arguments = ["+x", toolPath]
-                        try? chmodTask.run()
-                        chmodTask.waitUntilExit()
-                    }
-                }
-                
-                print("✅ Quarantine fix completed")
-                continuation.resume()
+        let tools = ["yt-dlp", "ffmpeg", "ffprobe"]
+        
+        for tool in tools {
+            if let bundledPath = getBundledExecutablePath(tool) {
+                await removeQuarantineFlag(from: bundledPath)
+                await makeExecutable(bundledPath)
             }
         }
-    }
-    
-    // ✅ 6. STATUS GETTERS pro UI
-    func isDependencyCheckComplete() -> Bool {
-        return dependenciesChecked
-    }
-    
-    func getLastKnownStatus() -> DependencyStatus? {
-        return cachedStatus
     }
 
     private func getBundledExecutablePath(_ tool: String) -> String? {

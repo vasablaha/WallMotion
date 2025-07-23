@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVKit
 import Foundation
 import Combine
 
@@ -337,8 +338,11 @@ struct ContentView: View {
             
             // Show selected video preview if available
             if let videoURL = selectedVideoURL {
-                YouTubeVideoPreviewSection(videoURL: videoURL)
-
+                VideoPreviewCard(
+                    videoURL: videoURL,
+                    isProcessing: isProcessing,
+                    progress: progress
+                )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 
                 if !isProcessing {
