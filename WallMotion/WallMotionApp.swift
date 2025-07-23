@@ -83,18 +83,11 @@ struct WallMotionApp: App {
     }
     
     private func initializeBundledTools() async {
-        print("🚀 Initializing bundled tools for DMG distribution...")
-        
-        // Fix quarantine issues pro bundled executables
-        await dependenciesManager.fixBundledExecutablesQuarantine()
-        
-        // Refresh dependency status
-        DispatchQueue.main.async {
-            dependenciesManager.refreshStatus()
-        }
-        
-        print("✅ Bundled tools initialization complete")
+        print("🚀 Initializing bundled tools...")
+        await dependenciesManager.performStartupInitialization()
+        print("✅ Initialization complete")
     }
+
     
     private func setupAppearance() {
         // Configure app appearance

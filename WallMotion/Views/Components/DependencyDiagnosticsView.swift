@@ -24,10 +24,19 @@ struct DependencyDiagnosticsView: View {
     @State private var lastScanSummary = ""
     @State private var showingScanResults = false
     
+    @State private var dependencyStatus: DependenciesManager.DependencyStatus?
+    @State private var statusLoaded = false
+    
     var body: some View {
         VStack(spacing: 24) {
             headerSection
-            dependencyStatusSection
+            Group {
+                if let status = dependencyStatus {
+                    dependencyStatusContent(status: status)
+                } else {
+                    loadingContent
+                }
+            }
             installationSection
             diagnosticsSection
         }
@@ -50,6 +59,65 @@ struct DependencyDiagnosticsView: View {
             diagnosticsSheet
         }
     }
+    
+    
+    
+    private func dependencyStatusContent(status: DependenciesManager.DependencyStatus) -> some View {
+            return VStack(spacing: 16) {
+                // Status overview
+                HStack {
+                    Text("Status Overview")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    Spacer()
+                    
+                    if status.allInstalled {
+                        Label("All Ready", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    } else {
+                        Label("\(status.missing.count) Missing", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                    }
+                }
+                
+                // Individual dependency status
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                    dependencyCard("Homebrew", isInstalled: status.homebrew, icon: "cube.box")
+                    dependencyCard("yt-dlp", isInstalled: status.ytdlp, icon: "arrow.down.circle")
+                    dependencyCard("FFmpeg", isInstalled: status.ffmpeg, icon: "play.rectangle")
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.secondary.opacity(0.1))
+            )
+        }
+        
+        private func dependencyCard(_ name: String, isInstalled: Bool, icon: String) -> some View {
+            return VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(isInstalled ? .green : .red)
+                
+                Text(name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                
+                Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(isInstalled ? .green : .red)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isInstalled ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+            )
+        }
     
     // MARK: - Header Section
     
@@ -83,53 +151,16 @@ struct DependencyDiagnosticsView: View {
     // MARK: - Dependency Status Section
     
     private var dependencyStatusSection: some View {
-        let status = dependenciesManager.checkDependencies()
-        
-        return VStack(spacing: 16) {
-            HStack {
-                Text("Current Status")
-                    .font(.headline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                if status.allInstalled {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text("Ready")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .fontWeight(.medium)
-                    }
-                } else {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text("\(status.missing.count) Missing")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                            .fontWeight(.medium)
-                    }
-                }
-            }
-            
-            // Dependency badges
-            HStack(spacing: 16) {
-                DependencyBadge(name: "Homebrew", isInstalled: status.homebrew)
-                DependencyBadge(name: "yt-dlp", isInstalled: status.ytdlp)
-                DependencyBadge(name: "FFmpeg", isInstalled: status.ffmpeg)
+        Group {
+            if let status = dependencyStatus {
+                // ✅ SPRÁVNĚ - unwrapped status
+                statusContent(for: status)
+            } else {
+                // Loading state
+                ProgressView("Loading dependencies...")
+                    .onAppear { loadDependencyStatus() }
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.gray.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                )
-        )
     }
     
     // MARK: - Installation Section
@@ -148,6 +179,13 @@ struct DependencyDiagnosticsView: View {
                 installationCompleteView
             }
         }
+    }
+    
+    private var loadingContent: some View {
+        return ProgressView("Checking dependencies...")
+            .onAppear {
+                loadDependencyStatusIfNeeded()
+            }
     }
     
     private var installationProgressView: some View {
@@ -172,6 +210,15 @@ struct DependencyDiagnosticsView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.blue.opacity(0.1))
         )
+    }
+    
+    // ✅ POMOCNÉ FUNKCE
+    private func loadDependencyStatusIfNeeded() {
+        guard !statusLoaded else { return }
+        
+        statusLoaded = true
+        // ✅ checkDependencies je teď rychlé díky cache
+        dependencyStatus = dependenciesManager.checkDependencies()
     }
     
     private var installationButtonsView: some View {
@@ -513,6 +560,55 @@ struct DependencyDiagnosticsView: View {
 // MARK: - Installation & Diagnostics Functions
 
 extension DependencyDiagnosticsView {
+    
+    private func statusContent(for status: DependenciesManager.DependencyStatus) -> some View {
+            VStack(spacing: 16) {
+                HStack {
+                    Text("Current Status")
+                        .font(.headline)
+                        .fontWeight(.medium)
+                    
+                    Spacer()
+                    
+                    // ✅ SPRÁVNĚ - status je už unwrapped
+                    if status.allInstalled {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Ready")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                                .fontWeight(.medium)
+                        }
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("\(status.missing.count) Missing")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                                .fontWeight(.medium)
+                        }
+                    }
+                }
+                
+                // Dependency badges
+                HStack(spacing: 16) {
+                    dependencyCard("Homebrew", isInstalled: status.homebrew, icon: "cube.box")
+                    dependencyCard("yt-dlp", isInstalled: status.ytdlp, icon: "arrow.down.circle")
+                    dependencyCard("FFmpeg", isInstalled: status.ffmpeg, icon: "play.rectangle")
+                }
+            }
+        }
+    
+    // ✅ NOVÉ: Přidejte tyto metody
+    private func loadDependencyStatus() {
+        guard !statusLoaded else { return }
+        
+        dependencyStatus = dependenciesManager.checkDependencies()
+        statusLoaded = true
+    }
+    
     
     private func tryInstallDependencies() async {
         do {
