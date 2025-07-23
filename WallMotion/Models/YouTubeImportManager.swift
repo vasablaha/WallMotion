@@ -242,7 +242,7 @@ class YouTubeImportManager: ObservableObject {
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
                 
                 task.arguments = [
-                    "-f", "bestvideo[ext=mp4][height<=2160]/bestvideo[height<=2160]/bestvideo[ext=mp4]/bestvideo",
+                    "-f", "best[height<=2160]/best[height<=1440]/best[height<=1080]/best",
                     "--merge-output-format", "mp4",
                     "-o", outputTemplate,
                     "--no-playlist",
