@@ -242,16 +242,17 @@ class YouTubeImportManager: ObservableObject {
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
                 
                 task.arguments = [
-                    "-f", "best[height<=2160]/best[height<=1440]/best[height<=1080]/best",
-                    "--merge-output-format", "mp4",
+                    "-f", "401/315/628/bestvideo[height>=2160]/bestvideo[height>=1440]/bestvideo",
+                    "--recode-video", "mp4",
+                    "--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "--referer", "https://www.youtube.com/",
                     "-o", outputTemplate,
                     "--no-playlist",
                     "--newline",
+                    "--no-audio",
                     "--no-warnings",
-                    "--no-check-certificate",
                     "--retries", "3",
                     "--socket-timeout", "30",
-                    "--force-ipv4",
                     urlString
                 ]
                 
