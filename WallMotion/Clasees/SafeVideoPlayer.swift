@@ -138,6 +138,8 @@ struct OptimizedVideoPreviewCard: View {
     let isProcessing: Bool
     let progress: Double
     
+    
+    
     @State private var isVideoReady = false
     @State private var hasError = false
     @State private var errorMessage = ""
@@ -148,6 +150,7 @@ struct OptimizedVideoPreviewCard: View {
         let fileSize: String
         let duration: String
         let resolution: String
+        let codec: String
     }
     
     var body: some View {
@@ -289,10 +292,8 @@ struct OptimizedVideoPreviewCard: View {
                 let fileName = videoURL.lastPathComponent
                 let fileSize = getFileSize(url: videoURL)
                 
-                // Safe AVAsset loading with timeout
+                // Safe AVAsset loading
                 let asset = AVAsset(url: videoURL)
-                
-                // Use async/await with timeout
                 let duration = try await withTimeout(seconds: 3.0) {
                     try await asset.load(.duration)
                 }
@@ -304,10 +305,36 @@ struct OptimizedVideoPreviewCard: View {
                 let videoDuration = CMTimeGetSeconds(duration)
                 let videoTracks = tracks.filter { $0.mediaType == .video }
                 
+                // ✅ ZÍSKEJTE SKUTEČNÉ ROZLIŠENÍ
                 var resolution = "Unknown"
+                var codec = "Unknown"
+                
                 if let videoTrack = videoTracks.first {
                     let naturalSize = try await videoTrack.load(.naturalSize)
-                    resolution = "\(Int(naturalSize.width))×\(Int(naturalSize.height))"
+                    let width = Int(naturalSize.width)
+                    let height = Int(naturalSize.height)
+                    
+                    // ✅ VYPOČÍTEJTE KVALITU Z ROZLIŠENÍ
+                    if height >= 2160 {
+                        resolution = "4K (\(width)×\(height))"
+                    } else if height >= 1440 {
+                        resolution = "2K (\(width)×\(height))"
+                    } else if height >= 1080 {
+                        resolution = "HD (\(width)×\(height))"
+                    } else if height >= 720 {
+                        resolution = "HD Ready (\(width)×\(height))"
+                    } else {
+                        resolution = "SD (\(width)×\(height))"
+                    }
+                    
+                    // ✅ ZÍSKEJTE SKUTEČNÝ CODEC
+                    let formatDescriptions = videoTrack.formatDescriptions
+                    for description in formatDescriptions {
+                        let formatDescription = description as! CMVideoFormatDescription
+                        let codecType = CMFormatDescriptionGetMediaSubType(formatDescription)
+                        codec = fourCharCodeToString(codecType)
+                        break
+                    }
                 }
                 
                 await MainActor.run {
@@ -315,18 +342,32 @@ struct OptimizedVideoPreviewCard: View {
                         fileName: fileName,
                         fileSize: fileSize,
                         duration: formatDuration(videoDuration),
-                        resolution: resolution
+                        resolution: resolution,  // ✅ Skutečné rozlišení!
+                        codec: codec             // ✅ Skutečný codec!
                     )
                 }
+                
+                print("✅ Video info loaded: \(resolution), \(codec)")
                 
             } catch {
                 print("❌ Error loading video info: \(error)")
                 await MainActor.run {
                     hasError = true
-                    errorMessage = "Failed to load video info"
+                    errorMessage = error.localizedDescription
                 }
             }
         }
+    }
+    
+    // ✅ PŘIDEJTE HELPER FUNKCI PRO CODEC
+    private func fourCharCodeToString(_ code: FourCharCode) -> String {
+        let bytes: [UInt8] = [
+            UInt8((code >> 24) & 0xFF),
+            UInt8((code >> 16) & 0xFF),
+            UInt8((code >> 8) & 0xFF),
+            UInt8(code & 0xFF)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "Unknown"
     }
     
     // MARK: - Helper Functions
@@ -524,17 +565,56 @@ struct OptimizedYouTubeVideoPreviewSection: View {
                     try await asset.load(.duration)
                 }
                 
+                let tracks = try await withTimeout(seconds: 2.0) {
+                    try await asset.load(.tracks)
+                }
+                
                 let videoDuration = CMTimeGetSeconds(duration)
+                let videoTracks = tracks.filter { $0.mediaType == .video }
+                
+                // ✅ ZÍSKEJTE SKUTEČNÉ ROZLIŠENÍ
+                var resolution = "Unknown"
+                var codec = "Unknown"
+                
+                if let videoTrack = videoTracks.first {
+                    let naturalSize = try await videoTrack.load(.naturalSize)
+                    let width = Int(naturalSize.width)
+                    let height = Int(naturalSize.height)
+                    
+                    // ✅ VYPOČÍTEJTE KVALITU Z ROZLIŠENÍ
+                    if height >= 2160 {
+                        resolution = "4K (\(width)×\(height))"
+                    } else if height >= 1440 {
+                        resolution = "2K (\(width)×\(height))"
+                    } else if height >= 1080 {
+                        resolution = "HD (\(width)×\(height))"
+                    } else if height >= 720 {
+                        resolution = "HD Ready (\(width)×\(height))"
+                    } else {
+                        resolution = "SD (\(width)×\(height))"
+                    }
+                    
+                    // ✅ ZÍSKEJTE SKUTEČNÝ CODEC
+                    let formatDescriptions = videoTrack.formatDescriptions
+                    for description in formatDescriptions {
+                        let formatDescription = description as! CMVideoFormatDescription
+                        let codecType = CMFormatDescriptionGetMediaSubType(formatDescription)
+                        codec = fourCharCodeToString(codecType)
+                        break
+                    }
+                }
                 
                 await MainActor.run {
                     videoInfo = VideoInfo(
                         fileName: fileName,
                         fileSize: fileSize,
                         duration: formatDuration(videoDuration),
-                        resolution: "HD", // Simplified for safety
-                        codec: "H.264"    // Simplified for safety
+                        resolution: resolution,  // ✅ Skutečné rozlišení!
+                        codec: codec             // ✅ Skutečný codec!
                     )
                 }
+                
+                print("✅ Video info loaded: \(resolution), \(codec)")
                 
             } catch {
                 print("❌ Error loading video info: \(error)")
@@ -545,7 +625,17 @@ struct OptimizedYouTubeVideoPreviewSection: View {
             }
         }
     }
-    
+
+    // ✅ PŘIDEJTE HELPER FUNKCI PRO CODEC
+    private func fourCharCodeToString(_ code: FourCharCode) -> String {
+        let bytes: [UInt8] = [
+            UInt8((code >> 24) & 0xFF),
+            UInt8((code >> 16) & 0xFF),
+            UInt8((code >> 8) & 0xFF),
+            UInt8(code & 0xFF)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "Unknown"
+    }
     // MARK: - Helper Functions
     private func getFileSize(url: URL) -> String {
         do {
