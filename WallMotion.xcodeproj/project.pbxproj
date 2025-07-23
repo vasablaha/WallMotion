@@ -60,9 +60,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				Resources/Executables/ffmpeg,
-				Resources/Executables/ffprobe,
-				"Resources/Executables/yt-dlp",
 			);
 			target = 3516364F2E23F6FC00C8C331 /* WallMotion */;
 		};
