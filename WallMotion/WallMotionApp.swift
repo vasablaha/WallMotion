@@ -1,30 +1,30 @@
 //
 //  WallMotionApp.swift
-//  WallMotion
-//
-//  Created by Václav Blaha on 13.07.2025.
+//  WallMotion - Optimized for single initialization
 //
 
 import SwiftUI
 
 @main
 struct WallMotionApp: App {
+    // MARK: - Shared Managers (Singleton pattern)
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var deviceManager = DeviceManager.shared
-    @StateObject private var dependenciesManager = DependenciesManager()
-
+    @StateObject private var dependenciesManager = DependenciesManager.shared // Make it singleton
+    @StateObject private var wallpaperManager = WallpaperManager.shared // Make it singleton
+    
+    // MARK: - App State
+    @State private var hasInitialized = false
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(authManager)
                 .environmentObject(deviceManager)
                 .environmentObject(dependenciesManager)
-
+                .environmentObject(wallpaperManager)
                 .onAppear {
-                    setupAppearance()
-                    Task {
-                        await initializeBundledTools()
-                    }
+                    performOneTimeInitialization()
                 }
         }
         .windowStyle(DefaultWindowStyle())
@@ -82,23 +82,69 @@ struct WallMotionApp: App {
         }
     }
     
-    private func initializeBundledTools() async {
-        print("🚀 Initializing bundled tools for DMG distribution...")
-        
-        // Fix quarantine issues pro bundled executables
-        await dependenciesManager.fixBundledExecutablesQuarantine()
-        
-        // Refresh dependency status
-        DispatchQueue.main.async {
-            dependenciesManager.refreshStatus()
+    // MARK: - Single Point of Initialization
+    
+    private func performOneTimeInitialization() {
+        // Prevent multiple initialization runs
+        guard !hasInitialized else {
+            print("⏭️ App already initialized, skipping...")
+            return
         }
         
-        print("✅ Bundled tools initialization complete")
+        hasInitialized = true
+        print("🚀 Starting WallMotion initialization (one-time)...")
+        
+        setupAppearance()
+        
+        Task {
+            await initializeApp()
+        }
     }
+    
+    private func initializeApp() async {
+        print("🔧 Phase 1: Initializing bundled tools...")
+        await initializeBundledTools()
+        
+        print("🔐 Phase 2: Performing authentication check...")
+        _ = await authManager.performAppLaunchAuthentication()
+        
+        print("✅ WallMotion initialization complete!")
+    }
+    
+    // MARK: - Bundle Tools Initialization (Single Run)
+    
+    private func initializeBundledTools() async {
+        print("🛠️ Initializing bundled tools...")
+        
+        // Use DependenciesManager to initialize bundled executables
+        await dependenciesManager.initializeBundledExecutables()
+        
+        // Check final status
+        let status = dependenciesManager.checkDependencies()
+        
+        await MainActor.run {
+            print("📊 Bundle tools final status:")
+            print("   yt-dlp: \(status.ytdlp ? "✅" : "❌")")
+            print("   ffmpeg: \(status.ffmpeg ? "✅" : "❌")")
+            print("   ffprobe: \(status.ffprobe ? "✅" : "❌")")
+            
+            if status.allAvailable {
+                print("✅ All bundled tools ready for use")
+            } else {
+                print("⚠️ Some bundled tools need attention:")
+                for missing in status.missing {
+                    print("   - Missing: \(missing)")
+                }
+            }
+        }
+    }
+    
+    // MARK: - App Setup
     
     private func setupAppearance() {
         // Configure app appearance
         NSWindow.allowsAutomaticWindowTabbing = false
+        print("🎨 App appearance configured")
     }
     
     private func showAboutWindow() {
@@ -161,15 +207,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 WallMotion launched")
-        
-        // Set up notification observers
         setupNotificationObservers()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
         print("🛑 WallMotion terminating")
-        
-        // Clean up if needed
         cleanupBeforeTermination()
     }
     
@@ -189,7 +231,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func cleanupBeforeTermination() {
         // Perform any necessary cleanup
-        // Update last seen timestamp if authenticated
         let authManager = AuthenticationManager.shared
         let deviceManager = DeviceManager.shared
         

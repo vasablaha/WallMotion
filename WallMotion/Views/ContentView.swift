@@ -17,10 +17,10 @@ enum MainViewType {
 }
 
 struct ContentView: View {
-    @StateObject private var wallpaperManager = WallpaperManager()
+    @EnvironmentObject private var wallpaperManager: WallpaperManager
+    @EnvironmentObject private var dependenciesManager: DependenciesManager
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var deviceManager = DeviceManager.shared
-    @StateObject private var videoSaverManager = VideoSaverManager()
     
     @State private var selectedVideoURL: URL?
     @State private var selectedLibraryVideo: WallpaperVideo?
@@ -400,10 +400,6 @@ struct ContentView: View {
             
             detectionSection
             
-            Divider()
-                .padding(.horizontal)
-            
-            VideoSaverSectionView(videoSaverManager: videoSaverManager)
             Divider()
                 .padding(.horizontal)
             

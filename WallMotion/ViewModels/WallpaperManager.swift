@@ -1,19 +1,32 @@
 import Foundation
 import Combine
 import AppKit
+import Security
 
 class WallpaperManager: ObservableObject {
+    // MARK: - Singleton
+    static let shared = WallpaperManager()
+    
     @Published var availableWallpapers: [String] = []
     @Published var detectedWallpaper: String = ""
     @Published var selectedCategory: VideoCategory = .custom
 
     private let wallpaperPath = "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
+    
+    // MARK: - Authorization
+    private var authorizationRef: AuthorizationRef?
 
-    // MARK: - Init
-    init() {
-        print("WallpaperManager: Premium version initialized")
+    // MARK: - Private Init (Singleton)
+    private init() {
+        print("WallpaperManager: Premium version initialized (singleton)")
         detectCurrentWallpaper()
         registerForLockNotifications()
+    }
+    
+    deinit {
+        if let authRef = authorizationRef {
+            AuthorizationFree(authRef, AuthorizationFlags())
+        }
     }
 
     // MARK: - Notifications
@@ -31,7 +44,7 @@ class WallpaperManager: ObservableObject {
 
     @objc private func screenLocked(_ notification: Notification) {
         print("Screen locked - pausing wallpaper agent")
-        _ = runShell("killall", ["WallpaperAgent"])
+        _ = runShell("/usr/bin/killall", ["WallpaperAgent"])
     }
 
     @objc private func screenUnlocked(_ notification: Notification) {
@@ -43,8 +56,8 @@ class WallpaperManager: ObservableObject {
         guard !detectedWallpaper.isEmpty else { return }
         let targetPath = "\(wallpaperPath)/\(detectedWallpaper).mov"
         print("Reloading wallpaper agent for file: \(targetPath)")
-        _ = runShell("touch", [targetPath])
-        _ = runShell("killall", ["WallpaperAgent"])
+        _ = runShell("/usr/bin/touch", [targetPath])
+        _ = runShell("/usr/bin/killall", ["WallpaperAgent"])
     }
 
     // MARK: - Detecting
@@ -120,131 +133,214 @@ class WallpaperManager: ObservableObject {
             return
         }
 
-        let targetFileName = "\(detectedWallpaper).mov"
-        let targetPath = "\(wallpaperPath)/\(targetFileName)"
+        let targetPath = "\(wallpaperPath)/\(detectedWallpaper).mov"
+        print("Target path: \(targetPath)")
 
-        progressCallback(0.2, "Preparing video...")
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempVideoPath = tempDir.appendingPathComponent("wallpaper_temp.mov").path
-        let backupPath = "\(targetPath).backup.\(Int(Date().timeIntervalSince1970))"
-
-        do {
-            try FileManager.default.copyItem(atPath: videoURL.path, toPath: tempVideoPath)
-            print("Video copied to temp location")
-        } catch {
-            print("Failed to copy to temp: \(error)")
-            progressCallback(0.0, "Failed to prepare video")
+        // Backup original with sudo
+        progressCallback(0.2, "Creating backup...")
+        let backupPath = "\(wallpaperPath)/\(detectedWallpaper).backup.mov"
+        let backupSuccess = await createBackupWithSudo(originalPath: targetPath, backupPath: backupPath)
+        
+        if !backupSuccess {
+            progressCallback(0.0, "Failed to create backup. Please enter administrator password when prompted.")
             return
         }
 
-        progressCallback(0.4, "Requesting admin access (ONE TIME ONLY)...")
+        // Process video
+        progressCallback(0.3, "Processing video...")
+        let tempProcessedURL = await processVideo(videoURL: videoURL)
 
-        guard await executeAllCommands(tempVideoPath: tempVideoPath, targetPath: targetPath, backupPath: backupPath, progressCallback: progressCallback) else {
-            try? FileManager.default.removeItem(atPath: tempVideoPath)
-            progressCallback(0.0, "Installation failed")
+        guard let processedURL = tempProcessedURL else {
+            progressCallback(0.0, "Video processing failed!")
             return
         }
 
-        try? FileManager.default.removeItem(atPath: tempVideoPath)
-
-        progressCallback(1.0, "Wallpaper replaced! Check System Settings!")
-        print("Replacement completed successfully!")
+        // Replace file with sudo
+        progressCallback(0.8, "Replacing wallpaper file...")
+        let replaceSuccess = await replaceFileWithSudo(processedURL: processedURL, targetPath: targetPath)
         
-        createMarkerFile()
-        
-        // ✅ FIX: Touch + restart WallpaperAgent (macOS reloads wallpaper)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-            let touchResult = self.runShell("touch", [targetPath])
-            print("Touched new wallpaper file: \(touchResult)")
-
-            let killResult = self.runShell("killall", ["WallpaperAgent"])
-            print("WallpaperAgent killed: \(killResult)")
+        if !replaceSuccess {
+            progressCallback(0.0, "Failed to replace wallpaper file! Please check administrator password.")
+            return
         }
+
+        // Reload system
+        progressCallback(0.9, "Refreshing wallpaper system...")
+        await reloadWallpaperSystem()
+
+        progressCallback(1.0, "Wallpaper replaced successfully!")
+        
+        // Update detection
+        await MainActor.run { detectCurrentWallpaper() }
     }
+
+    // MARK: - Private Processing Methods (with Sudo)
     
-    private func createMarkerFile() {
-        let markerPath = "\(wallpaperPath)/wallmotion_active"
-        let markerContent = "VideoSaver integration active\n\(Date().description)"
-        
-        do {
-            try markerContent.write(toFile: markerPath, atomically: true, encoding: .utf8)
-            print("✅ VideoSaver marker file created: \(markerPath)")
-        } catch {
-            print("⚠️ Failed to create VideoSaver marker file: \(error)")
+    private func createBackupWithSudo(originalPath: String, backupPath: String) async -> Bool {
+        // Check if original file exists
+        guard FileManager.default.fileExists(atPath: originalPath) else {
+            print("⚠️ Original file doesn't exist, skipping backup")
+            return true
         }
-    }
-
-    private func removeMarkerFile() {
-        let markerPath = "\(wallpaperPath)/wallmotion_active"
         
-        do {
-            try FileManager.default.removeItem(atPath: markerPath)
-            print("✅ VideoSaver marker file removed")
-        } catch {
-            print("⚠️ Failed to remove VideoSaver marker file: \(error)")
+        // Remove old backup if exists
+        if FileManager.default.fileExists(atPath: backupPath) {
+            let removeResult = await runSudoCommand("/bin/rm", ["-f", backupPath])
+            if !removeResult.success {
+                print("⚠️ Failed to remove old backup: \(removeResult.output)")
+            }
         }
-    }
-
-
-    // MARK: - Shell execution helper
-    func runShell(_ command: String, _ arguments: [String]) -> String {
-        let task = Process()
         
-        // ✅ OPRAVA: Use executableURL instead of deprecated launchPath
-        if command.hasPrefix("/") {
-            // Absolute path
-            task.executableURL = URL(fileURLWithPath: command)
-            task.arguments = arguments
+        // Create backup using sudo cp
+        let copyResult = await runSudoCommand("/bin/cp", [originalPath, backupPath])
+        
+        if copyResult.success {
+            print("✅ Backup created at: \(backupPath)")
+            return true
         } else {
-            // Command in PATH - use /usr/bin/env
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            task.arguments = [command] + arguments
+            print("❌ Backup creation failed: \(copyResult.output)")
+            return false
         }
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return "Failed to run \(command): \(error)"
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
     }
-    // MARK: - AppleScript batch
-    private func executeAllCommands(tempVideoPath: String, targetPath: String, backupPath: String, progressCallback: @escaping (Double, String) -> Void) async -> Bool {
-        await MainActor.run { progressCallback(0.5, "Cleaning and installing wallpaper...") }
 
-        let batchScript = """
-        do shell script "
-        cp '\(targetPath)' '\(backupPath)'
-        find '\(wallpaperPath)' -name '*.mov' -type f -delete
-        find '\(wallpaperPath)' -name '*.backup.*' -type f -delete
-        cp '\(tempVideoPath)' '\(targetPath)'
-        killall WallpaperAgent 2>/dev/null || true
-        " with administrator privileges
-        """
+    private func processVideo(videoURL: URL) async -> URL? {
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("processed_wallpaper.mov")
+        
+        // Simple copy for now - could add ffmpeg processing here
+        do {
+            if FileManager.default.fileExists(atPath: tempURL.path) {
+                try FileManager.default.removeItem(at: tempURL)
+            }
+            
+            // Ensure we're working with file URLs
+            let sourceURL = videoURL.standardizedFileURL
+            let destinationURL = tempURL.standardizedFileURL
+            
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            print("✅ Video processed: \(destinationURL.path)")
+            return destinationURL
+        } catch {
+            print("❌ Video processing failed: \(error)")
+            return nil
+        }
+    }
 
-        let success = await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                let appleScript = NSAppleScript(source: batchScript)
-                var error: NSDictionary?
-                let _ = appleScript?.executeAndReturnError(&error)
+    private func replaceFileWithSudo(processedURL: URL, targetPath: String) async -> Bool {
+        // First copy processed video to a temporary location accessible to sudo
+        let tempPath = "/tmp/wallmotion_temp.mov"
+        
+        do {
+            // Remove temp file if exists
+            if FileManager.default.fileExists(atPath: tempPath) {
+                try FileManager.default.removeItem(atPath: tempPath)
+            }
+            
+            // Copy processed video to temp location
+            try FileManager.default.copyItem(at: processedURL, to: URL(fileURLWithPath: tempPath))
+        } catch {
+            print("❌ Failed to prepare temp file: \(error)")
+            return false
+        }
+        
+        // Remove original wallpaper file with sudo
+        let removeResult = await runSudoCommand("/bin/rm", ["-f", targetPath])
+        if !removeResult.success {
+            print("❌ Failed to remove original file: \(removeResult.output)")
+            return false
+        }
+        
+        // Copy new file with sudo
+        let copyResult = await runSudoCommand("/bin/cp", [tempPath, targetPath])
+        
+        // Cleanup temp file
+        do {
+            if FileManager.default.fileExists(atPath: tempPath) {
+                try FileManager.default.removeItem(atPath: tempPath)
+            }
+        } catch {
+            print("⚠️ Failed to cleanup temp file: \(error)")
+        }
+        
+        if copyResult.success {
+            print("✅ File replaced at: \(targetPath)")
+            return true
+        } else {
+            print("❌ File replacement failed: \(copyResult.output)")
+            return false
+        }
+    }
 
-                if let error = error {
-                    print("Batch operation failed: \(error)")
-                    continuation.resume(returning: false)
-                } else {
-                    print("Complete cleanup successful! All old files removed.")
-                    continuation.resume(returning: true)
+    // MARK: - Sudo Command Runner
+    
+    private func runSudoCommand(_ command: String, _ arguments: [String]) async -> (success: Bool, output: String) {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+                task.arguments = [command] + arguments
+                
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    let success = task.terminationStatus == 0
+                    
+                    continuation.resume(returning: (success, output))
+                } catch {
+                    continuation.resume(returning: (false, "Failed to run sudo command: \(error)"))
                 }
             }
         }
+    }
 
-        return success
+    private func reloadWallpaperSystem() async {
+        // Touch the file to trigger system reload using sudo
+        let touchResult = await runSudoCommand("/usr/bin/touch", ["\(wallpaperPath)/\(detectedWallpaper).mov"])
+        if touchResult.success {
+            print("✅ Touched wallpaper file")
+        } else {
+            print("⚠️ Failed to touch file: \(touchResult.output)")
+        }
+        
+        // Kill and restart wallpaper agent
+        let killResult = await runSudoCommand("/usr/bin/killall", ["WallpaperAgent"])
+        if killResult.success {
+            print("✅ Wallpaper agent restarted")
+        } else {
+            print("⚠️ Failed to kill WallpaperAgent: \(killResult.output)")
+        }
+        
+        // Small delay for system to process
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        
+        print("✅ Wallpaper system reloaded")
+    }
+
+    // MARK: - Shell Helper (Updated with proper paths)
+    private func runShell(_ command: String, _ arguments: [String]) -> String {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: command)
+        task.arguments = arguments
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            print("Shell command failed: \(error)")
+            return ""
+        }
     }
 }

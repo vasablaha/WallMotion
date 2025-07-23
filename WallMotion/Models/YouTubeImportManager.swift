@@ -22,8 +22,8 @@ class YouTubeImportManager: ObservableObject {
     @Published var maxDuration: Double = 300.0 // 5 minutes max for wallpaper
     
     // MARK: - Dependencies
-    @Published var dependenciesManager = DependenciesManager()
-    
+    private let dependenciesManager = DependenciesManager.shared
+
     // MARK: - Properties
     let tempDirectory = FileManager.default.temporaryDirectory
     private var downloadTask: Process?
@@ -79,10 +79,7 @@ class YouTubeImportManager: ObservableObject {
         
         return (ytdlp: deps.ytdlp, ffmpeg: deps.ffmpeg)
     }
-    // ✅ OPRAVENÁ FUNKCE: Používá DependenciesManager
-    func installationInstructions() -> String {
-        return dependenciesManager.getInstallationInstructions()
-    }
+
     // MARK: - Public Methods
     
     func validateYouTubeURL(_ urlString: String) -> Bool {

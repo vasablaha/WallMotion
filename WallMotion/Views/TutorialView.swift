@@ -1,37 +1,21 @@
 //
 //  TutorialView.swift
-//  WallMotion
+//  WallMotion - Refactored for Bundle-Only Dependencies
 //
-//  Tutorial component for first-time setup with fixed layout and images
-//
-
-//
-//  TutorialView.swift
-//  WallMotion
-//
-//  Tutorial with DependenciesManager integration
+//  Tutorial component for first-time setup with simplified dependencies
 //
 
 import SwiftUI
 
-// TutorialView s dependencies jako normální krok tutoriálu
-
 struct TutorialView: View {
     @State private var currentStep = 0
-    @StateObject private var dependenciesManager = DependenciesManager()
+    @EnvironmentObject private var dependenciesManager: DependenciesManager
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showingInstallationAlert = false
-    @State private var installationError: Error?
-    @EnvironmentObject private var authManager: AuthenticationManager  // PŘIDÁNO pro user info
-
+    @EnvironmentObject private var authManager: AuthenticationManager
     
-    // 🔧 Diagnostics state variables
-    @State private var diagnosticsReport = ""
-    @State private var showDiagnostics = false
-    @State private var isRunningDiagnostics = false
-    @State private var diagnosticsSuccess: Bool?
-    @State private var lastScanSummary = ""
-    @State private var showingScanResults = false
+    // Simplified state - no installation needed
+    @State private var bundleStatus: DependenciesManager.DependencyStatus?
+    @State private var showingDiagnostics = false
     
     let onComplete: (() -> Void)?
     let isInSidebar: Bool
@@ -41,14 +25,14 @@ struct TutorialView: View {
         self.isInSidebar = isInSidebar
     }
     
-    // ZMĚNA: Fixní tutorial steps - dependencies jako normální krok
+    // REFACTORED: Simplified tutorial steps without installation
     private let tutorialSteps: [TutorialStep] = [
-        // NOVÝ: Dependencies krok jako první step
+        // INFO: Bundle tools verification (replaces installation step)
         TutorialStep(
-            title: "Install Required Dependencies",
-            subtitle: "Set up tools for YouTube video import",
-            content: "To use YouTube import feature, WallMotion needs some command-line tools. Click the install button below to automatically set up Homebrew, yt-dlp, and FFmpeg. This is optional - you can skip this step if you only want to use local video files.",
-            icon: "terminal.fill",
+            title: "YouTube Import Tools",
+            subtitle: "Check bundled video processing tools",
+            content: "WallMotion includes bundled tools (yt-dlp, ffmpeg) for YouTube video import. These tools are automatically available - no installation required! You can use the diagnostics to verify they're working properly.",
+            icon: "cube.box.fill",
             imagePlaceholder: "",
             stepType: .setup
         ),
@@ -111,15 +95,15 @@ struct TutorialView: View {
             title: "Process & Apply",
             subtitle: "Optimize and set your wallpaper",
             content: "After selecting your video, WallMotion will process it (resize, optimize, etc.) and replace the system wallpaper files. The process is automatic and usually takes 30-60 seconds.",
-            icon: "wand.and.stars",
+            icon: "gear.circle.fill",
             imagePlaceholder: "3tutorial",
             stepType: .usage
         ),
         
         TutorialStep(
-            title: "Enjoy Your Dynamic Wallpaper!",
-            subtitle: "Your custom video is now your wallpaper",
-            content: "That's it! Your custom video is now playing as your desktop wallpaper. You can repeat this process anytime to change your wallpaper. Pro tip: Videos work best when they're 10-30 seconds long and loop smoothly.",
+            title: "You're All Set!",
+            subtitle: "Enjoy your new video wallpaper",
+            content: "Congratulations! Your video wallpaper is now active. You can return to WallMotion anytime to change to different videos. The app will remember your setup and make future wallpaper changes quick and easy.",
             icon: "checkmark.circle.fill",
             imagePlaceholder: "4tutorial",
             stepType: .usage
@@ -127,331 +111,367 @@ struct TutorialView: View {
     ]
     
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                backgroundGradient
-                
-                VStack(spacing: 0) {
-                    // Header
-                    headerSection
-                    
-                    // Main content
-                    ScrollView {
-                        VStack(spacing: isInSidebar ? 20 : 30) {
-                            stepContent
-                        }
-                        .padding(.horizontal, isInSidebar ? 20 : 40)
-                        .padding(.bottom, 120)
-                    }
-                    
-                    Spacer()
-                }
-                
-                // Fixed navigation at bottom
-                VStack {
-                    Spacer()
-                    navigationSection
-                }
+        VStack(spacing: 0) {
+            // Progress indicator
+            progressIndicator
+            
+            // Main content
+            if isInSidebar {
+                compactTutorialContent
+            } else {
+                fullTutorialContent
             }
         }
+        .background(backgroundGradient)
         .onAppear {
-            dependenciesManager.refreshStatus()
-        }
-        .alert("Installation Error", isPresented: $showingInstallationAlert) {
-            Button("OK") { }
-            Button("Try Again") {
-                Task {
-                    await tryInstallDependencies()
-                }
-            }
-        } message: {
-            if let error = installationError {
-                Text(error.localizedDescription)
+            // Initialize bundled tools when tutorial appears
+            Task {
+                await dependenciesManager.initializeBundledExecutables()
+                bundleStatus = dependenciesManager.checkDependencies()
             }
         }
-        .sheet(isPresented: $showDiagnostics) {
-            VStack(alignment: .leading, spacing: 16) {
-                // Header
-                HStack {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Diagnostics Report")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("System configuration and compatibility check")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button("✕") {
-                        showDiagnostics = false
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .font(.title3)
-                    .foregroundColor(.secondary)
-                }
-                
-                Divider()
-                
-                // Report content
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(diagnosticsReport)
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.gray.opacity(0.1))
-                            )
-                    }
-                }
-                
-                // Action buttons
-                HStack(spacing: 12) {
-                    Button("Copy to Clipboard") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(diagnosticsReport, forType: .string)
-                        
-                        // Visual feedback
-                        let originalTitle = "Copy to Clipboard"
-                        // Could add temporary "Copied!" feedback here
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                    
-                    Spacer()
-                    
-                    Button("Close") {
-                        showDiagnostics = false
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                }
-            }
-            .padding(24)
-            .frame(width: 700, height: 500)
+        .sheet(isPresented: $showingDiagnostics) {
+            DependencyDiagnosticsView()
+                .frame(width: 700, height: 600)
         }
     }
     
+    // MARK: - Progress Indicator
     
-    private var headerSection: some View {
-            VStack(spacing: 8) {
-                let currentPhase = getCurrentPhase()
+    private var progressIndicator: some View {
+        HStack {
+            ForEach(0..<tutorialSteps.count, id: \.self) { index in
+                Circle()
+                    .fill(index <= currentStep ? Color.accentColor : Color.gray.opacity(0.3))
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(index == currentStep ? 1.2 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentStep)
                 
-                HStack(spacing: 12) {
-                    Image(systemName: currentPhase.icon)
-                        .font(.title2)
-                        .foregroundColor(currentPhase.color)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(currentPhase.title)
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                        
-                        Text(currentPhase.subtitle)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Text("\(currentStep + 1)/\(tutorialSteps.count)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(currentPhase.color.opacity(0.1))
-                        )
+                if index < tutorialSteps.count - 1 {
+                    Rectangle()
+                        .fill(index < currentStep ? Color.accentColor : Color.gray.opacity(0.3))
+                        .frame(height: 2)
+                        .animation(.easeInOut(duration: 0.3), value: currentStep)
                 }
-                .padding(.horizontal, isInSidebar ? 20 : 40)
-                .padding(.top, 20)
             }
         }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 20)
+    }
     
-    // MARK: - Step Content
+    // MARK: - Full Tutorial Content
     
-    private var stepContent: some View {
-        let step = tutorialSteps[currentStep]
-        let currentPhase = getCurrentPhase()
-        
-        return VStack(spacing: isInSidebar ? 20 : 30) {
-            // Phase indicator
-            if !isInSidebar {
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: currentPhase.icon)
-                            .font(.caption)
-                            .foregroundColor(currentPhase.color)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(currentPhase.title)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            
-                            Text(currentPhase.subtitle)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(currentPhase.color.opacity(0.1))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(currentPhase.color.opacity(0.3), lineWidth: 1)
-                            )
-                    )
+    private var fullTutorialContent: some View {
+        VStack(spacing: 30) {
+            Spacer()
+            
+            // Current step content
+            currentStepView
+            
+            Spacer()
+            
+            // Navigation buttons
+            navigationButtons
+        }
+        .padding(.horizontal, 40)
+        .padding(.bottom, 40)
+    }
+    
+    // MARK: - Compact Tutorial Content (for sidebar)
+    
+    private var compactTutorialContent: some View {
+        VStack(spacing: 20) {
+            currentStepHeaderCompact
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 15) {
+                    Text(currentTutorialStep.content)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     
-                    Spacer()
+                    // Show bundle status for first step
+                    if currentStep == 0 {
+                        bundleStatusSection
+                    }
                 }
+                .padding(.horizontal, 16)
             }
             
-            // Step icon and title
-            VStack(spacing: 12) {
-                Image(systemName: step.icon)
-                    .font(.system(size: isInSidebar ? 30 : 40, weight: .ultraLight))
+            compactNavigationButtons
+        }
+        .padding(.vertical, 16)
+    }
+    
+    // MARK: - Current Step View
+    
+    private var currentStepView: some View {
+        VStack(spacing: 30) {
+            // Step icon and phase info
+            VStack(spacing: 20) {
+                // Phase indicator
+                phaseIndicator
+                
+                // Step icon
+                Image(systemName: currentTutorialStep.icon)
+                    .font(.system(size: 80, weight: .light))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [currentPhase.color, .purple],
+                            colors: getCurrentPhase().color == .blue ? [.blue, .cyan] : [.green, .mint],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                
-                VStack(spacing: 6) {
-                    Text(step.title)
-                        .font(isInSidebar ? .headline : .title2)
-                        .fontWeight(.bold)
-                        .multilineTextAlignment(.center)
-                    
-                    Text(step.subtitle)
-                        .font(isInSidebar ? .caption : .subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
             }
             
-            // ZMĚNA: Dependency step jako normální step
+            // Step content
+            VStack(spacing: 16) {
+                Text(currentTutorialStep.title)
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .fontDesign(.rounded)
+                    .multilineTextAlignment(.center)
+                
+                Text(currentTutorialStep.subtitle)
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                Text(currentTutorialStep.content)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 600)
+            
+            // Special content for first step (bundle tools)
             if currentStep == 0 {
-                DependencyDiagnosticsView()
-                    .environmentObject(authManager)
-            } else if !step.imagePlaceholder.isEmpty {
-                imagePlaceholder(step.imagePlaceholder, phase: currentPhase)
-            } else if step.icon == "checkmark.circle.fill" {
-                // Final step layout
-                VStack(spacing: 20) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: isInSidebar ? 40 : 60))
+                bundleStatusSection
+            }
+        }
+    }
+    
+    // MARK: - Bundle Status Section
+    
+    private var bundleStatusSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Bundled Tools Status")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Button("Run Diagnostics") {
+                    showingDiagnostics = true
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+            
+            if let status = bundleStatus {
+                VStack(spacing: 8) {
+                    bundleToolRow("yt-dlp", status.ytdlp)
+                    bundleToolRow("ffmpeg", status.ffmpeg)
+                    bundleToolRow("ffprobe", status.ffprobe)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                        )
+                )
+                
+                if status.allAvailable {
+                    Text("✅ All YouTube import tools are ready!")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.green)
-                    
+                } else {
                     VStack(spacing: 8) {
-                        Text("Setup Complete!")
-                            .font(isInSidebar ? .headline : .title2)
-                            .fontWeight(.bold)
+                        Text("⚠️ Some tools may need initialization")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
                         
-                        Text("You're ready to use WallMotion")
-                            .font(isInSidebar ? .caption : .subheadline)
-                            .foregroundColor(.secondary)
+                        Button("Fix Bundle Tools") {
+                            Task {
+                                await dependenciesManager.initializeBundledExecutables()
+                                bundleStatus = dependenciesManager.checkDependencies()
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
                     }
                 }
+            } else {
+                ProgressView("Checking bundle tools...")
+                    .progressViewStyle(CircularProgressViewStyle())
             }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.blue.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+    
+    private func bundleToolRow(_ tool: String, _ available: Bool) -> some View {
+        HStack {
+            Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(available ? .green : .red)
+                .font(.caption)
             
-            // Step description
-            Text(step.content)
-                .font(isInSidebar ? .caption : .body)
-                .foregroundColor(.primary)
-                .multilineTextAlignment(.leading)
-                .lineSpacing(4)
-                .padding(.horizontal, isInSidebar ? 0 : 20)
+            Text(tool)
+                .font(.subheadline)
+                .fontWeight(.medium)
+            
+            Spacer()
+            
+            if let path = dependenciesManager.findExecutablePath(for: tool) {
+                Text("Bundled")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.secondary.opacity(0.1))
+                    )
+            }
         }
     }
     
-    // PŘIDEJTE TYTO FUNKCE DO TutorialView struktury:
-
-    private func runFullDiagnostics() {
-        isRunningDiagnostics = true
-        diagnosticsSuccess = nil
+    // MARK: - Header Components
+    
+    private var currentStepHeaderCompact: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: currentTutorialStep.icon)
+                    .font(.title2)
+                    .foregroundColor(getCurrentPhase().color)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(currentTutorialStep.title)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .lineLimit(2)
+                    
+                    Text(currentTutorialStep.subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                
+                Spacer()
+            }
+        }
+    }
+    
+    private var phaseIndicator: some View {
+        let phase = getCurrentPhase()
         
-        Task {
-            do {
-                // Simulate some processing time for better UX
-                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                
-                let report = dependenciesManager.performDiagnostics()
-                let (processSuccess, processOutput) = await dependenciesManager.testExternalProcess()
-                
-                let fullReport = """
-                🔍 WallMotion System Diagnostics Report
-                Generated: \(Date().formatted(date: .abbreviated, time: .standard))
-                ================================================
-                
-                \(report)
-                
-                🧪 External Process Test:
-                Status: \(processSuccess ? "✅ PASSED" : "❌ FAILED")
-                \(processOutput)
-                
-                ================================================
-                📋 Copy this report when contacting support
-                """
-                
-                await MainActor.run {
-                    diagnosticsReport = fullReport
-                    diagnosticsSuccess = processSuccess
-                    isRunningDiagnostics = false
-                    showDiagnostics = true
-                }
-                
-            } catch {
-                await MainActor.run {
-                    diagnosticsReport = "❌ Diagnostics failed: \(error.localizedDescription)"
-                    diagnosticsSuccess = false
-                    isRunningDiagnostics = false
-                    showDiagnostics = true
-                }
-            }
-        }
-    }
-
-    private func testSystemPermissions() {
-        Task {
-            let (success, output) = await dependenciesManager.testExternalProcess()
+        return HStack(spacing: 8) {
+            Image(systemName: phase.icon)
+                .font(.caption)
+                .foregroundColor(phase.color)
             
-            await MainActor.run {
-                let report = """
-                🔒 Quick Permission Test
-                Generated: \(Date().formatted(date: .omitted, time: .standard))
-                
-                External Process Test: \(success ? "✅ PASSED" : "❌ FAILED")
-                
-                Details:
-                \(output)
-                
-                \(success ? "✅ Your system allows WallMotion to run external tools." : "❌ Permission issues detected. External tools may not work properly.")
-                """
-                
-                diagnosticsReport = report
-                diagnosticsSuccess = success
-                showDiagnostics = true
+            Text(phase.title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(phase.color)
+            
+            Text("•")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            
+            Text(phase.subtitle)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(phase.color.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(phase.color.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Navigation
+    
+    private var navigationButtons: some View {
+        HStack(spacing: 20) {
+            if currentStep > 0 {
+                Button("Previous") {
+                    previousStep()
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .keyboardShortcut(.leftArrow, modifiers: [])
             }
+            
+            Spacer()
+            
+            Button(currentStep == tutorialSteps.count - 1 ? "Finish" : "Next") {
+                nextStep()
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .keyboardShortcut(currentStep == tutorialSteps.count - 1 ? .return : .rightArrow, modifiers: [])
         }
     }
     
-    // MARK: - Dependency Section
-
+    private var compactNavigationButtons: some View {
+        HStack(spacing: 12) {
+            if currentStep > 0 {
+                Button("←") {
+                    previousStep()
+                }
+                .buttonStyle(TertiaryButtonStyle())
+            }
+            
+            Text("\(currentStep + 1) of \(tutorialSteps.count)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+            
+            Button(currentStep == tutorialSteps.count - 1 ? "✓" : "→") {
+                nextStep()
+            }
+            .buttonStyle(TertiaryButtonStyle())
+        }
+        .padding(.horizontal, 16)
+    }
     
+    // MARK: - Computed Properties
+    
+    private var currentTutorialStep: TutorialStep {
+        guard currentStep >= 0 && currentStep < tutorialSteps.count else {
+            return tutorialSteps[0]
+        }
+        return tutorialSteps[currentStep]
+    }
+    
+    private var backgroundGradient: some View {
+        LinearGradient(
+            colors: colorScheme == .dark ?
+                [Color.black.opacity(0.8), Color.blue.opacity(0.1)] :
+                [Color.white, Color.blue.opacity(0.05)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
     
     // MARK: - Navigation Methods
     
@@ -507,168 +527,9 @@ struct TutorialView: View {
             )
         }
     }
-    
-    // MARK: - Installation Methods
-    
-    private func tryInstallDependencies() async {
-        do {
-            try await dependenciesManager.installDependencies()
-            // Po úspěšné instalaci refresh status
-            dependenciesManager.refreshStatus()
-        } catch {
-            await MainActor.run {
-                installationError = error
-                showingInstallationAlert = true
-            }
-        }
-    }
-    
-    private func showManualInstructions() {
-        let alert = NSAlert()
-        alert.messageText = "Manual Installation Instructions"
-        alert.informativeText = """
-        To install the dependencies manually:
-        
-        1. Install Homebrew (if not already installed):
-           Open Terminal and run:
-           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        
-        2. Install yt-dlp:
-           brew install yt-dlp
-        
-        3. Install FFmpeg:
-           brew install ffmpeg
-        
-        After installation, you can continue with the tutorial.
-        """
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Copy Commands")
-        
-        let response = alert.runModal()
-        
-        if response == .alertSecondButtonReturn {
-            let commands = """
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            brew install yt-dlp
-            brew install ffmpeg
-            """
-            
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(commands, forType: .string)
-        }
-    }
-    
-    // MARK: - Navigation Section
-    
-    private var navigationSection: some View {
-        HStack(spacing: 20) {
-            Button(action: previousStep) {
-                HStack {
-                    Image(systemName: "chevron.left")
-                    Text("Previous")
-                }
-                .frame(minWidth: 100)
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(currentStep == 0)
-            
-            Spacer()
-            
-            HStack(spacing: 8) {
-                ForEach(0..<tutorialSteps.count, id: \.self) { index in
-                    let stepPhase = getPhaseForStep(index)
-                    Circle()
-                        .fill(index == currentStep ? stepPhase.color : .gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
-                        .scaleEffect(index == currentStep ? 1.2 : 1.0)
-                        .animation(.easeInOut(duration: 0.2), value: currentStep)
-                }
-            }
-            
-            Spacer()
-            
-            Button(action: nextStep) {
-                HStack {
-                    Text(currentStep == tutorialSteps.count - 1 ? "Finish" : "Next")
-                    Image(systemName: currentStep == tutorialSteps.count - 1 ? "checkmark" : "chevron.right")
-                        .font(.caption)
-                }
-                .frame(minWidth: 100)
-            }
-            .buttonStyle(PrimaryButtonStyle())
-        }
-        .padding(.vertical, 20)
-        .padding(.horizontal, isInSidebar ? 20 : 40)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea()
-        )
-    }
-    
-    // MARK: - Helper Views
-    
-    private func imagePlaceholder(_ imageName: String, phase: TutorialPhase) -> some View {
-        VStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(phase.color.opacity(0.05))
-                .frame(height: isInSidebar ? 180 : 280)
-                .overlay(
-                    Group {
-                        if !imageName.isEmpty, let nsImage = NSImage(named: imageName) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(maxHeight: isInSidebar ? 170 : 270)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                        } else {
-                            VStack(spacing: 8) {
-                                Image(systemName: "photo.fill")
-                                    .font(.system(size: isInSidebar ? 30 : 40))
-                                    .foregroundColor(phase.color.opacity(0.7))
-                                
-                                Text("Screenshot will appear here")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                        }
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(phase.color.opacity(0.3), lineWidth: 1)
-                )
-            
-            if !imageName.isEmpty {
-                Text(imageName.replacingOccurrences(of: "tutorial", with: "Tutorial "))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 8)
-            }
-        }
-    }
-    
-    // MARK: - Background
-    
-    private var backgroundGradient: some View {
-        LinearGradient(
-            colors: colorScheme == .dark ?
-                [Color.black.opacity(0.8), Color.blue.opacity(0.1)] :
-                [Color.white, Color.blue.opacity(0.05)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
 }
 
-
-
-// MARK: - Tutorial Models
+// MARK: - Tutorial Models (unchanged)
 
 struct TutorialStep {
     let title: String
@@ -691,24 +552,4 @@ struct TutorialPhase {
     let icon: String
 }
 
-
-// MARK: - Button Styles
-
-struct TertiaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(6)
-            .background(
-                Circle()
-                    .fill(Color.gray.opacity(0.1))
-                    .overlay(
-                        Circle()
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-            )
-            .foregroundColor(.primary)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
 

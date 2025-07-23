@@ -1,835 +1,667 @@
 //
 //  DependencyDiagnosticsView.swift
-//  WallMotion
+//  WallMotion - Bundle Dependencies Testing
 //
-//  Standalone view for dependency installation and system diagnostics
+//  Comprehensive testing of bundled executables (yt-dlp, ffmpeg, ffprobe)
 //
 
 import SwiftUI
 
 struct DependencyDiagnosticsView: View {
-    @StateObject private var dependenciesManager = DependenciesManager()
+    @EnvironmentObject private var dependenciesManager: DependenciesManager
     @EnvironmentObject private var authManager: AuthenticationManager
-    @Environment(\.colorScheme) private var colorScheme
     
-    // Installation state
-    @State private var showingInstallationAlert = false
-    @State private var installationError: Error?
+    // MARK: - State
+    @State private var isRunningTests = false
+    @State private var testResults: [ToolTestResult] = []
+    @State private var fullReport = ""
+    @State private var showingReport = false
+    @State private var testProgress: Double = 0.0
+    @State private var currentTestStep = ""
+    @State private var overallStatus: TestStatus = .notTested
     
-    // Diagnostics state
-    @State private var diagnosticsReport = ""
-    @State private var showDiagnostics = false
-    @State private var isRunningDiagnostics = false
-    @State private var diagnosticsSuccess: Bool?
-    @State private var lastScanSummary = ""
-    @State private var showingScanResults = false
+    // MARK: - Models
+    struct ToolTestResult {
+        let tool: String
+        let available: Bool
+        let executable: Bool
+        let version: String?
+        let versionSuccess: Bool
+        let functionalTest: Bool
+        let functionalTestOutput: String?
+        let path: String?
+        let fileSize: String?
+        let permissions: String?
+        let overallStatus: TestStatus
+        
+        var statusIcon: String {
+            switch overallStatus {
+            case .success: return "checkmark.circle.fill"
+            case .warning: return "exclamationmark.triangle.fill"
+            case .failure: return "xmark.circle.fill"
+            case .notTested: return "circle"
+            }
+        }
+        
+        var statusColor: Color {
+            switch overallStatus {
+            case .success: return .green
+            case .warning: return .orange
+            case .failure: return .red
+            case .notTested: return .gray
+            }
+        }
+    }
+    
+    enum TestStatus {
+        case success, warning, failure, notTested
+    }
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             headerSection
-            dependencyStatusSection
-            installationSection
-            diagnosticsSection
-        }
-        .onAppear {
-            dependenciesManager.refreshStatus()
-        }
-        .alert("Installation Error", isPresented: $showingInstallationAlert) {
-            Button("OK") { }
-            Button("Try Again") {
-                Task {
-                    await tryInstallDependencies()
-                }
+            
+            if isRunningTests {
+                testingProgressView
+            } else {
+                testControlsSection
             }
-        } message: {
-            if let error = installationError {
-                Text(error.localizedDescription)
+            
+            if !testResults.isEmpty {
+                testResultsSection
             }
+            
+            Spacer()
         }
-        .sheet(isPresented: $showDiagnostics) {
-            diagnosticsSheet
+        .padding(30)
+        .frame(maxWidth: 600)
+        .sheet(isPresented: $showingReport) {
+            reportSheetView
         }
     }
     
     // MARK: - Header Section
-    
     private var headerSection: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "terminal.fill")
-                    .font(.title2)
+        VStack(spacing: 15) {
+            HStack(spacing: 12) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 24, weight: .medium))
                     .foregroundColor(.blue)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("YouTube Import Setup")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                    
-                    Text("Install tools for downloading and processing YouTube videos")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
+                Text("Bundled Dependencies Diagnostics")
+                    .font(.title2)
+                    .fontWeight(.semibold)
             }
             
-            Text("To use YouTube import feature, WallMotion needs some command-line tools. This is optional - you can skip this if you only want to use local video files.")
+            Text("Test and validate bundled tools (yt-dlp, ffmpeg, ffprobe)")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.leading)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
         }
     }
     
-    // MARK: - Dependency Status Section
-    
-    private var dependencyStatusSection: some View {
-        let status = dependenciesManager.checkDependencies()
-        
-        return VStack(spacing: 16) {
-            HStack {
-                Text("Current Status")
-                    .font(.headline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                if status.allInstalled {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text("Ready")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .fontWeight(.medium)
-                    }
-                } else {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text("\(status.missing.count) Missing")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                            .fontWeight(.medium)
-                    }
-                }
-            }
-            
-            // Dependency badges
-            HStack(spacing: 16) {
-                DependencyBadge(name: "Homebrew", isInstalled: status.homebrew)
-                DependencyBadge(name: "yt-dlp", isInstalled: status.ytdlp)
-                DependencyBadge(name: "FFmpeg", isInstalled: status.ffmpeg)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.gray.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                )
-        )
-    }
-    
-    // MARK: - Installation Section
-    
-    private var installationSection: some View {
-        let status = dependenciesManager.checkDependencies()
-        
-        return VStack(spacing: 16) {
-            if !status.allInstalled {
-                if dependenciesManager.isInstalling {
-                    installationProgressView
-                } else {
-                    installationButtonsView
-                }
-            } else {
-                installationCompleteView
-            }
-        }
-    }
-    
-    private var installationProgressView: some View {
-        VStack(spacing: 12) {
-            ProgressView(value: dependenciesManager.installationProgress)
+    // MARK: - Testing Progress View
+    private var testingProgressView: some View {
+        VStack(spacing: 20) {
+            ProgressView(value: testProgress, total: 1.0)
                 .progressViewStyle(LinearProgressViewStyle())
                 .frame(height: 8)
-                .scaleEffect(x: 1, y: 1.5)
             
-            Text(dependenciesManager.installationMessage)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button("Cancel Installation") {
-                dependenciesManager.cancelInstallation()
-            }
-            .buttonStyle(SecondaryButtonStyle())
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.blue.opacity(0.1))
-        )
-    }
-    
-    private var installationButtonsView: some View {
-        VStack(spacing: 12) {
-            Button(action: {
-                Task {
-                    await tryInstallDependencies()
-                }
-            }) {
-                HStack {
-                    Image(systemName: "arrow.down.circle.fill")
-                    Text("Install Dependencies Automatically")
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            
-            HStack {
-                Button("Manual Instructions") {
-                    showManualInstructions()
-                }
-                .buttonStyle(SecondaryButtonStyle())
+            VStack(spacing: 8) {
+                Text("Running Diagnostics...")
+                    .font(.headline)
                 
-                Button("Skip This Step") {
-                    // Could emit a callback here if needed
-                }
-                .buttonStyle(SecondaryButtonStyle())
+                Text(currentTestStep)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
-            
-            Text("The automatic installer will download and install Homebrew, yt-dlp, and FFmpeg for you.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.gray.opacity(0.1))
-        )
-    }
-    
-    private var installationCompleteView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 40))
-                .foregroundColor(.green)
-            
-            Text("All dependencies installed!")
-                .font(.headline)
-                .foregroundColor(.green)
-            
-            Text("YouTube import feature is ready to use.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
         }
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.green.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                )
+                .fill(.ultraThinMaterial)
         )
     }
     
-    // MARK: - Diagnostics Section
-    
-    private var diagnosticsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Divider()
-                .padding(.vertical, 8)
-            
-            diagnosticsHeader
-            diagnosticsButtons
-            
-            if showingScanResults && !isRunningDiagnostics {
-                diagnosticsScanResults
-            }
-            
-            diagnosticsHelpText
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.gray.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                )
-        )
-    }
-    
-    private var diagnosticsHeader: some View {
-        HStack {
-            Image(systemName: "stethoscope")
-                .foregroundColor(.blue)
-                .font(.title3)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("System Diagnostics")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Text("Check system configuration and permissions")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            if let success = diagnosticsSuccess {
-                Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundColor(success ? .green : .red)
-                    .font(.title3)
-            }
-        }
-    }
-    
-    private var diagnosticsButtons: some View {
-        VStack(spacing: 12) { // 🔧 PŘIDÁNO: Zabalit do VStack
-            // První řada tlačítek
-            HStack(spacing: 12) {
-                Button(action: runFullDiagnostics) {
-                    HStack(spacing: 8) {
-                        if isRunningDiagnostics {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                                .progressViewStyle(CircularProgressViewStyle())
-                        } else {
-                            Image(systemName: "magnifyingglass.circle.fill")
-                        }
-                        Text(isRunningDiagnostics ? "Running..." : "Run Full Scan")
-                    }
-                    .frame(maxWidth: .infinity)
+    // MARK: - Test Controls Section
+    private var testControlsSection: some View {
+        VStack(spacing: 15) {
+            // Run Tests Button
+            Button(action: {
+                Task {
+                    await runComprehensiveTests()
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(isRunningDiagnostics)
-                
-                Button(action: testYouTubeTools) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "play.circle.fill")
-                        Text("Test YouTube Tools")
-                    }
-                    .frame(maxWidth: .infinity)
+            }) {
+                HStack {
+                    Image(systemName: "play.circle.fill")
+                    Text("Run Comprehensive Tests")
+                        .fontWeight(.medium)
                 }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(isRunningDiagnostics)
-            }
-            
-            // Druhá řada tlačítek (podmíněná)
-            if showingScanResults && diagnosticsSuccess == false {
-                HStack(spacing: 12) {
-                    Button(action: fixPermissions) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "wrench.and.screwdriver.fill")
-                            Text("Fix Tool Permissions")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(isRunningDiagnostics)
-                    
-                    Button(action: testSystemPermissions) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "lock.circle.fill")
-                            Text("Test Permissions")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(isRunningDiagnostics)
-                }
-            }
-        } // 🔧 PŘIDÁNO: Uzavření VStack
-    }
-    
-    private var diagnosticsScanResults: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: diagnosticsSuccess == true ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundColor(diagnosticsSuccess == true ? .green : .orange)
-                    .font(.title3)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(diagnosticsSuccess == true ? "System Ready" : "Issues Detected")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(diagnosticsSuccess == true ? .green : .orange)
-                    
-                    Text(lastScanSummary)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-                
-                Spacer()
-            }
-            
-            HStack(spacing: 12) {
-                Button("View Details") {
-                    showDiagnostics = true
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                
-                Button("Run Again") {
-                    runFullDiagnostics()
-                }
-                .buttonStyle(PlainButtonStyle())
-                .foregroundColor(.blue)
-                .font(.caption)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill((diagnosticsSuccess == true ? Color.green : Color.orange).opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke((diagnosticsSuccess == true ? Color.green : Color.orange).opacity(0.2), lineWidth: 1)
-                )
-        )
-    }
-    
-    private var diagnosticsHelpText: some View {
-        Text("💡 Having issues? Run diagnostics to generate a detailed report you can share with support.")
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .multilineTextAlignment(.leading)
-            .padding(.top, 4)
-    }
-    
-    // MARK: - Diagnostics Sheet
-    
-    private var diagnosticsSheet: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            diagnosticsSheetHeader
-            Divider()
-            diagnosticsStatusIndicator
-            diagnosticsReportContent
-            diagnosticsSheetFooter
-        }
-        .padding(24)
-        .frame(width: 800, height: 600)
-    }
-    
-    private var diagnosticsSheetHeader: some View {
-        HStack {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.title2)
-                .foregroundColor(.blue)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("System Diagnostics")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Text("Complete technical report for troubleshooting")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Button("✕") {
-                showDiagnostics = false
-            }
-            .buttonStyle(PlainButtonStyle())
-            .font(.title3)
-            .foregroundColor(.secondary)
-        }
-    }
-    
-    private var diagnosticsStatusIndicator: some View {
-        HStack(spacing: 12) {
-            Image(systemName: diagnosticsSuccess == true ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundColor(diagnosticsSuccess == true ? .green : .orange)
-                .font(.title3)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(diagnosticsSuccess == true ? "System Status: Ready" : "System Status: Issues Detected")
-                    .font(.headline)
-                    .foregroundColor(diagnosticsSuccess == true ? .green : .orange)
-                
-                Text("Generated: \(Date().formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill((diagnosticsSuccess == true ? Color.green : Color.orange).opacity(0.1))
-        )
-    }
-    
-    private var diagnosticsReportContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(diagnosticsReport)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(16)
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.gray.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                )
-        )
-    }
-    
-    private var diagnosticsSheetFooter: some View {
-        HStack(spacing: 12) {
-            Button("📋 Copy Report") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(diagnosticsReport, forType: .string)
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            
-            Text("💡 Tip: Send this report to support if you need help")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            Button("Close") {
-                showDiagnostics = false
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryButtonStyle())
+            .controlSize(.large)
+            
+            // Quick Status Check
+            Button(action: {
+                quickStatusCheck()
+            }) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                    Text("Quick Status Check")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+        }
+    }
+    
+    // MARK: - Test Results Section
+    private var testResultsSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Text("Test Results")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Overall status indicator
+                HStack(spacing: 6) {
+                    Image(systemName: overallStatusIcon)
+                        .foregroundColor(overallStatusColor)
+                    
+                    Text(overallStatusText)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(overallStatusColor)
+                }
+            }
+            
+            // Individual tool results
+            VStack(spacing: 12) {
+                ForEach(testResults, id: \.tool) { result in
+                    toolResultCard(result)
+                }
+            }
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                Button("View Full Report") {
+                    showingReport = true
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                
+                Button("Copy Report") {
+                    copyReportToClipboard()
+                }
+                .buttonStyle(TertiaryButtonStyle())
+                
+                Spacer()
+                
+                Button("Re-run Tests") {
+                    Task {
+                        await runComprehensiveTests()
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Tool Result Card
+    private func toolResultCard(_ result: ToolTestResult) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Status icon
+            Image(systemName: result.statusIcon)
+                .font(.title2)
+                .foregroundColor(result.statusColor)
+                .frame(width: 24)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                // Tool name and status
+                HStack {
+                    Text(result.tool)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    Spacer()
+                    
+                    if let version = result.version {
+                        Text(version)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.secondary.opacity(0.1))
+                            )
+                    }
+                }
+                
+                // Test details
+                VStack(alignment: .leading, spacing: 4) {
+                    testDetailRow("Available", result.available)
+                    testDetailRow("Executable", result.executable)
+                    testDetailRow("Version Check", result.versionSuccess)
+                    testDetailRow("Functional Test", result.functionalTest)
+                }
+                .font(.caption)
+                
+                if let path = result.path {
+                    Text("Path: \(path)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(result.statusColor.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(result.statusColor.opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+    
+    private func testDetailRow(_ label: String, _ success: Bool) -> some View {
+        HStack {
+            Text(label)
+                .foregroundColor(.secondary)
+            Spacer()
+            Image(systemName: success ? "checkmark" : "xmark")
+                .foregroundColor(success ? .green : .red)
+                .font(.caption)
+        }
+    }
+    
+    // MARK: - Report Sheet View
+    private var reportSheetView: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(fullReport)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(16)
+                }
+            }
+            .navigationTitle("Diagnostic Report")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        showingReport = false
+                    }
+                }
+                
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Copy") {
+                        copyReportToClipboard()
+                    }
+                }
+            }
+        }
+        .frame(width: 700, height: 600)
+    }
+    
+    // MARK: - Computed Properties
+    private var overallStatusIcon: String {
+        switch overallStatus {
+        case .success: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .failure: return "xmark.circle.fill"
+        case .notTested: return "circle"
+        }
+    }
+    
+    private var overallStatusColor: Color {
+        switch overallStatus {
+        case .success: return .green
+        case .warning: return .orange
+        case .failure: return .red
+        case .notTested: return .gray
+        }
+    }
+    
+    private var overallStatusText: String {
+        switch overallStatus {
+        case .success: return "All Tests Passed"
+        case .warning: return "Some Issues Found"
+        case .failure: return "Critical Issues"
+        case .notTested: return "Not Tested"
         }
     }
 }
 
-// MARK: - Installation & Diagnostics Functions
-
+// MARK: - Testing Functions
 extension DependencyDiagnosticsView {
     
-    private func tryInstallDependencies() async {
-        do {
-            try await dependenciesManager.installDependencies()
-        } catch {
-            await MainActor.run {
-                installationError = error
-                showingInstallationAlert = true
-            }
-        }
-    }
-    
-    private func showManualInstructions() {
-        dependenciesManager.showManualInstallationInstructions()
-    }
-    
-    private func runFullDiagnostics() {
-        isRunningDiagnostics = true
-        diagnosticsSuccess = nil
-        showingScanResults = false
+    func quickStatusCheck() {
+        let status = dependenciesManager.checkDependencies()
         
-        Task {
-            do {
-                try await Task.sleep(nanoseconds: 800_000_000) // 0.8 seconds for better UX
-                
-                let dependencyReport = dependenciesManager.performDiagnostics()
-                let (processSuccess, processOutput) = await dependenciesManager.testExternalProcess()
-                let systemInfo = generateSystemInfo()
-                let userInfo = generateUserInfo()
-                
-                // Generate summary for quick view
-                let dependencyStatus = dependenciesManager.checkDependencies()
-                let summary = createScanSummary(
-                    dependenciesOK: dependencyStatus.allInstalled,
-                    processTestOK: processSuccess,
-                    issueCount: dependencyStatus.missing.count
-                )
-                
-                // Generate detailed report
-                let fullReport = """
-                🔍 WallMotion Complete System Report
-                Generated: \(Date().formatted(date: .complete, time: .standard))
-                
-                ═══════════════════════════════════════════════════════
-                📋 SUMMARY
-                ═══════════════════════════════════════════════════════
-                Status: \(processSuccess && dependencyStatus.allInstalled ? "✅ SYSTEM READY" : "⚠️ ISSUES DETECTED")
-                Dependencies: \(dependencyStatus.allInstalled ? "✅ All installed" : "❌ Missing: \(dependencyStatus.missing.joined(separator: ", "))")
-                Permissions: \(processSuccess ? "✅ Working" : "❌ Failed")
-                
-                ═══════════════════════════════════════════════════════
-                🖥️ SYSTEM INFORMATION
-                ═══════════════════════════════════════════════════════
-                \(systemInfo)
-                
-                ═══════════════════════════════════════════════════════
-                👤 USER INFORMATION
-                ═══════════════════════════════════════════════════════
-                \(userInfo)
-                
-                ═══════════════════════════════════════════════════════
-                🔧 DEPENDENCY ANALYSIS
-                ═══════════════════════════════════════════════════════
-                \(dependencyReport)
-                
-                ═══════════════════════════════════════════════════════
-                🧪 PERMISSIONS TEST
-                ═══════════════════════════════════════════════════════
-                Test Status: \(processSuccess ? "✅ PASSED" : "❌ FAILED")
-                \(processOutput)
-                
-                ═══════════════════════════════════════════════════════
-                📞 SUPPORT INFORMATION
-                ═══════════════════════════════════════════════════════
-                When contacting support, please include this entire report.
-                Report ID: WM-\(Date().timeIntervalSince1970.rounded())
-                ═══════════════════════════════════════════════════════
-                """
-                
-                await MainActor.run {
-                    diagnosticsReport = fullReport
-                    lastScanSummary = summary
-                    diagnosticsSuccess = processSuccess && dependencyStatus.allInstalled
-                    isRunningDiagnostics = false
-                    showingScanResults = true
-                }
-                
-            } catch {
-                await MainActor.run {
-                    diagnosticsReport = "❌ Diagnostics failed: \(error.localizedDescription)"
-                    lastScanSummary = "Scan failed: \(error.localizedDescription)"
-                    diagnosticsSuccess = false
-                    isRunningDiagnostics = false
-                    showingScanResults = true
-                }
-            }
-        }
-    }
-    
-    private func testSystemPermissions() {
-        Task {
-            let (success, output) = await dependenciesManager.testExternalProcess()
-            let systemInfo = generateSystemInfo()
-            let userInfo = generateUserInfo()
-            
-            await MainActor.run {
-                let summary = success ?
-                    "External process permissions are working correctly." :
-                    "Permission issues detected. External tools may not work properly."
-                
-                let report = """
-                🔒 WallMotion Permission Check
-                Generated: \(Date().formatted(date: .complete, time: .standard))
-                
-                ═══════════════════════════════════════════════════════
-                📋 PERMISSION TEST SUMMARY
-                ═══════════════════════════════════════════════════════
-                Status: \(success ? "✅ PASSED" : "❌ FAILED")
-                \(success ? "✅ Your system allows WallMotion to run external tools." : "❌ Permission issues detected. External tools may not work properly.")
-                
-                ═══════════════════════════════════════════════════════
-                🖥️ SYSTEM INFORMATION
-                ═══════════════════════════════════════════════════════
-                \(systemInfo)
-                
-                ═══════════════════════════════════════════════════════
-                👤 USER INFORMATION
-                ═══════════════════════════════════════════════════════
-                \(userInfo)
-                
-                ═══════════════════════════════════════════════════════
-                🧪 DETAILED TEST RESULTS
-                ═══════════════════════════════════════════════════════
-                \(output)
-                
-                ═══════════════════════════════════════════════════════
-                📞 SUPPORT INFORMATION
-                ═══════════════════════════════════════════════════════
-                When contacting support, please include this report.
-                Report ID: WM-PERM-\(Date().timeIntervalSince1970.rounded())
-                ═══════════════════════════════════════════════════════
-                """
-                
-                diagnosticsReport = report
-                lastScanSummary = summary
-                diagnosticsSuccess = success
-                showingScanResults = true
-            }
-        }
-    }
-    
-    private func testYouTubeTools() {
-        isRunningDiagnostics = true
-        diagnosticsSuccess = nil
-        showingScanResults = false
+        testResults = []
+        let tools = ["yt-dlp", "ffmpeg", "ffprobe"]
         
-        Task {
-            // Create a temporary YouTube manager for testing
-            let testManager = YouTubeImportManager()
+        for tool in tools {
+            let available = dependenciesManager.isExecutableAvailable(tool)
+            let path = dependenciesManager.findExecutablePath(for: tool)
             
-            let (toolsWork, toolDetails) = await testManager.testBundledTools()
+            let result = ToolTestResult(
+                tool: tool,
+                available: available,
+                executable: available,
+                version: nil,
+                versionSuccess: false,
+                functionalTest: false,
+                functionalTestOutput: nil,
+                path: path,
+                fileSize: getFileSize(path: path),
+                permissions: getPermissions(path: path),
+                overallStatus: available ? .warning : .failure // Warning because no full test
+            )
             
+            testResults.append(result)
+        }
+        
+        updateOverallStatus()
+    }
+    
+    func runComprehensiveTests() async {
+        await MainActor.run {
+            isRunningTests = true
+            testProgress = 0.0
+            testResults = []
+            currentTestStep = "Initializing tests..."
+        }
+        
+        // Initialize bundled executables
+        await MainActor.run {
+            currentTestStep = "Fixing bundled executables..."
+            testProgress = 0.1
+        }
+        
+        await dependenciesManager.initializeBundledExecutables()
+        
+        let tools = ["yt-dlp", "ffmpeg", "ffprobe"]
+        let progressStep = 0.8 / Double(tools.count)
+        
+        var results: [ToolTestResult] = []
+        
+        for (index, tool) in tools.enumerated() {
             await MainActor.run {
-                let summary = toolsWork ?
-                    "YouTube tools are working correctly and ready to use." :
-                    "YouTube tools have issues. Check the detailed report for fixes."
-                
-                let report = """
-                🧪 WallMotion YouTube Tools Test
-                Generated: \(Date().formatted(date: .complete, time: .standard))
-                
-                ═══════════════════════════════════════════════════════
-                📋 TOOLS TEST SUMMARY
-                ═══════════════════════════════════════════════════════
-                Status: \(toolsWork ? "✅ WORKING" : "❌ ISSUES DETECTED")
-                
-                ═══════════════════════════════════════════════════════
-                🔧 DETAILED TOOL ANALYSIS
-                ═══════════════════════════════════════════════════════
-                \(toolDetails)
-                
-                ═══════════════════════════════════════════════════════
-                🖥️ SYSTEM INFORMATION
-                ═══════════════════════════════════════════════════════
-                \(generateSystemInfo())
-                
-                ═══════════════════════════════════════════════════════
-                👤 USER INFORMATION
-                ═══════════════════════════════════════════════════════
-                \(generateUserInfo())
-                
-                ═══════════════════════════════════════════════════════
-                💡 TROUBLESHOOTING TIPS
-                ═══════════════════════════════════════════════════════
-                If tools are not working:
-                1. Click "Fix Tool Permissions" button below
-                2. Restart the application
-                3. Try the YouTube import again
-                4. If still failing, contact support with this report
-                
-                ═══════════════════════════════════════════════════════
-                📞 SUPPORT INFORMATION
-                ═══════════════════════════════════════════════════════
-                When contacting support, please include this report.
-                Report ID: WM-TOOLS-\(Date().timeIntervalSince1970.rounded())
-                ═══════════════════════════════════════════════════════
-                """
-                
-                diagnosticsReport = report
-                lastScanSummary = summary
-                diagnosticsSuccess = toolsWork
-                isRunningDiagnostics = false
-                showingScanResults = true
+                currentTestStep = "Testing \(tool)..."
+                testProgress = 0.2 + Double(index) * progressStep
             }
+            
+            let result = await testTool(tool)
+            results.append(result)
+            
+            // Short delay for better UX
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        }
+        
+        await MainActor.run {
+            currentTestStep = "Generating report..."
+            testProgress = 0.95
+        }
+        
+        // Generate full report
+        fullReport = await generateFullReport(results: results)
+        
+        await MainActor.run {
+            testResults = results
+            updateOverallStatus()
+            testProgress = 1.0
+            currentTestStep = "Tests completed!"
+        }
+        
+        // Hide progress after short delay
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        await MainActor.run {
+            isRunningTests = false
         }
     }
     
-    private func fixPermissions() {
-        Task {
-            isRunningDiagnostics = true
-            
-            // Create a temporary YouTube manager for fixing
-            let testManager = YouTubeImportManager()
-            let success = await testManager.fixBundledToolPermissions()
-            
-            await MainActor.run {
-                let message = success ?
-                    "Tool permissions have been fixed. Please restart the app and try again." :
-                    "Failed to fix some tool permissions. Manual intervention may be required."
-                
-                // Update the summary
-                lastScanSummary = message
-                diagnosticsSuccess = success
-                isRunningDiagnostics = false
-                
-                // Show a simple alert for immediate feedback
-                let alert = NSAlert()
-                alert.messageText = success ? "Permissions Fixed" : "Fix Failed"
-                alert.informativeText = message
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            }
+    private func testTool(_ tool: String) async -> ToolTestResult {
+        // 1. Check availability
+        let available = dependenciesManager.isExecutableAvailable(tool)
+        let path = dependenciesManager.findExecutablePath(for: tool)
+        let executable = available && FileManager.default.isExecutableFile(atPath: path ?? "")
+        
+        // 2. Get file info
+        let fileSize = getFileSize(path: path)
+        let permissions = getPermissions(path: path)
+        
+        // 3. Test version
+        var version: String?
+        var versionSuccess = false
+        
+        if executable, let toolPath = path {
+            let versionResult = await testVersion(tool: tool, path: toolPath)
+            version = versionResult.version
+            versionSuccess = versionResult.success
         }
-    }
-    
-    private func createScanSummary(dependenciesOK: Bool, processTestOK: Bool, issueCount: Int) -> String {
-        if dependenciesOK && processTestOK {
-            return "All systems operational. YouTube import and video processing should work correctly."
-        } else if !dependenciesOK && !processTestOK {
-            return "Multiple issues found: \(issueCount) missing dependencies and permission problems detected."
-        } else if !dependenciesOK {
-            return "\(issueCount) dependencies missing. Install them to enable YouTube import features."
+        
+        // 4. Functional test
+        var functionalTest = false
+        var functionalTestOutput: String?
+        
+        if executable && versionSuccess, let toolPath = path {
+            let functionalResult = await testFunctionality(tool: tool, path: toolPath)
+            functionalTest = functionalResult.success
+            functionalTestOutput = functionalResult.output
+        }
+        
+        // 5. Determine overall status
+        let overallStatus: TestStatus
+        if !available {
+            overallStatus = .failure
+        } else if !executable || !versionSuccess {
+            overallStatus = .failure
+        } else if !functionalTest {
+            overallStatus = .warning
         } else {
-            return "Permission issues detected. External tools may not work properly in this environment."
+            overallStatus = .success
         }
-    }
-    
-    private func generateSystemInfo() -> String {
-        let processInfo = ProcessInfo.processInfo
-        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
-        let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
-        let bundleID = Bundle.main.bundleIdentifier ?? "Unknown"
         
-        // Simple architecture detection
-        let architecture: String
-        #if arch(arm64)
-            architecture = "Apple Silicon (ARM64)"
-        #elseif arch(x86_64)
-            architecture = "Intel (x86_64)"
-        #else
-            architecture = "Unknown"
-        #endif
-        
-        return """
-        • Device: \(processInfo.hostName)
-        • macOS Version: \(processInfo.operatingSystemVersionString)
-        • Architecture: \(architecture) - \(processInfo.processorCount) cores
-        • Memory: \(ByteCountFormatter.string(fromByteCount: Int64(processInfo.physicalMemory), countStyle: .memory))
-        • App Version: \(appVersion) (Build \(buildNumber))
-        • Bundle ID: \(bundleID)
-        • Runtime: \(Int(processInfo.systemUptime)) seconds uptime
-        • Environment: \(Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "Sandboxed" : "Development")
-        """
-    }
-    
-    private func generateUserInfo() -> String {
-        return """
-        • Email: \(authManager.user?.email ?? "Not available")  
-        • License Status: \(authManager.hasValidLicense ? "✅ Valid" : "❌ Invalid/Missing")
-        • Authentication: \(authManager.isAuthenticated ? "✅ Logged in" : "❌ Not logged in")
-        • User ID: \(authManager.user?.id ?? "Not available")
-        """
-    }
-}
-
-// MARK: - Supporting Views and Styles
-
-struct DependencyBadge: View {
-    let name: String
-    let isInstalled: Bool
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: isInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundColor(isInstalled ? .green : .red)
-                .font(.caption)
-            
-            Text(name)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(isInstalled ? .green : .red)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill((isInstalled ? Color.green : Color.red).opacity(0.1))
+        return ToolTestResult(
+            tool: tool,
+            available: available,
+            executable: executable,
+            version: version,
+            versionSuccess: versionSuccess,
+            functionalTest: functionalTest,
+            functionalTestOutput: functionalTestOutput,
+            path: path,
+            fileSize: fileSize,
+            permissions: permissions,
+            overallStatus: overallStatus
         )
+    }
+    
+    private func testVersion(tool: String, path: String) async -> (success: Bool, version: String?) {
+        let arguments: [String]
+        switch tool {
+        case "yt-dlp":
+            arguments = ["--version"]
+        case "ffmpeg", "ffprobe":
+            arguments = ["-version"]
+        default:
+            arguments = ["--version"]
+        }
+        
+        let (success, output) = await ShellCommandExecutor.run(path, arguments: arguments)
+        
+        if success {
+            // Extract version from output
+            let cleanVersion = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: .newlines).first ?? output
+            return (true, String(cleanVersion.prefix(50))) // Limit length
+        } else {
+            return (false, nil)
+        }
+    }
+    
+    private func testFunctionality(tool: String, path: String) async -> (success: Bool, output: String) {
+        switch tool {
+        case "yt-dlp":
+            // Test help command (safer than trying to download)
+            let (success, output) = await ShellCommandExecutor.run(path, arguments: ["--help"])
+            let isValid = success && output.contains("youtube-dl")
+            return (isValid, success ? "Help command successful" : output)
+            
+        case "ffmpeg":
+            // Test with no input (should show usage)
+            let (success, output) = await ShellCommandExecutor.run(path, arguments: ["-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=1", "-f", "null", "-"])
+            // ffmpeg exits with code 0 for this test
+            return (success, success ? "Test pattern generation successful" : output)
+            
+        case "ffprobe":
+            // Test help command
+            let (success, output) = await ShellCommandExecutor.run(path, arguments: ["-help"])
+            let isValid = success && output.contains("ffprobe")
+            return (isValid, success ? "Help command successful" : output)
+            
+        default:
+            return (false, "Unknown tool")
+        }
+    }
+    
+    private func generateFullReport(results: [ToolTestResult]) async -> String {
+        var report = "🔍 WallMotion Bundle Dependencies - Comprehensive Test Report\n"
+        report += String(repeating: "=", count: 65) + "\n\n"
+        
+        // System info
+        report += "🖥️ System Information:\n"
+        report += "• Date: \(Date().formatted(date: .complete, time: .shortened))\n"
+        report += "• macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)\n"
+        report += "• App Version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")\n"
+        
+        if let user = authManager.user {
+            report += "• User: \(user.email)\n"
+        }
+        
+        report += "\n"
+        
+        // Bundle info
+        report += "📦 Bundle Information:\n"
+        report += "• Bundle: \(Bundle.main.bundlePath)\n"
+        if let resourcePath = Bundle.main.resourcePath {
+            report += "• Resources: \(resourcePath)\n"
+        }
+        report += "\n"
+        
+        // Test results
+        report += "🧪 Test Results:\n"
+        for result in results {
+            report += "┌─ \(result.tool.uppercased()) ─\(String(repeating: "─", count: 50 - result.tool.count))\n"
+            report += "│ Status: \(result.overallStatus == .success ? "✅ PASS" : result.overallStatus == .warning ? "⚠️ WARN" : "❌ FAIL")\n"
+            report += "│ Available: \(result.available ? "✅" : "❌")\n"
+            report += "│ Executable: \(result.executable ? "✅" : "❌")\n"
+            report += "│ Version Test: \(result.versionSuccess ? "✅" : "❌")\n"
+            report += "│ Functional Test: \(result.functionalTest ? "✅" : "❌")\n"
+            
+            if let path = result.path {
+                report += "│ Path: \(path)\n"
+            }
+            
+            if let version = result.version {
+                report += "│ Version: \(version)\n"
+            }
+            
+            if let size = result.fileSize {
+                report += "│ Size: \(size)\n"
+            }
+            
+            if let permissions = result.permissions {
+                report += "│ Permissions: \(permissions)\n"
+            }
+            
+            if let functionalOutput = result.functionalTestOutput {
+                report += "│ Test Output: \(functionalOutput.prefix(100))...\n"
+            }
+            
+            report += "└\(String(repeating: "─", count: 60))\n\n"
+        }
+        
+        // Summary
+        let passCount = results.filter { $0.overallStatus == .success }.count
+        let warnCount = results.filter { $0.overallStatus == .warning }.count
+        let failCount = results.filter { $0.overallStatus == .failure }.count
+        
+        report += "📊 Summary:\n"
+        report += "• ✅ Passed: \(passCount)/\(results.count)\n"
+        report += "• ⚠️ Warning: \(warnCount)/\(results.count)\n"
+        report += "• ❌ Failed: \(failCount)/\(results.count)\n"
+        report += "• Overall: \(overallStatusText)\n"
+        
+        return report
+    }
+    
+    private func getFileSize(path: String?) -> String? {
+        guard let path = path else { return nil }
+        
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: path)
+            if let size = attributes[.size] as? Int64 {
+                let formatter = ByteCountFormatter()
+                formatter.allowedUnits = [.useMB, .useKB]
+                formatter.countStyle = .file
+                return formatter.string(fromByteCount: size)
+            }
+        } catch {
+            return nil
+        }
+        
+        return nil
+    }
+    
+    private func getPermissions(path: String?) -> String? {
+        guard let path = path else { return nil }
+        
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: path)
+            if let permissions = attributes[.posixPermissions] as? NSNumber {
+                return String(permissions.uint16Value, radix: 8)
+            }
+        } catch {
+            return nil
+        }
+        
+        return nil
+    }
+    
+    private func updateOverallStatus() {
+        let allResults = testResults
+        
+        if allResults.isEmpty {
+            overallStatus = .notTested
+        } else if allResults.allSatisfy({ $0.overallStatus == .success }) {
+            overallStatus = .success
+        } else if allResults.contains(where: { $0.overallStatus == .failure }) {
+            overallStatus = .failure
+        } else {
+            overallStatus = .warning
+        }
+    }
+    
+    private func copyReportToClipboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(fullReport, forType: .string)
     }
 }
