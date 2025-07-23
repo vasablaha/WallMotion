@@ -338,11 +338,7 @@ struct ContentView: View {
             
             // Show selected video preview if available
             if let videoURL = selectedVideoURL {
-                VideoPreviewCard(
-                    videoURL: videoURL,
-                    isProcessing: isProcessing,
-                    progress: progress
-                )
+                OptimizedVideoPreviewCard(videoURL: videoURL, isProcessing: isProcessing, progress: progress)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 
                 if !isProcessing {

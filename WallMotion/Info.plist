@@ -177,5 +177,6 @@
     <!-- For local network video sources -->
     <key>NSAllowsLocalNetworking</key>
     <true/>
+    
 </dict>
 </plist>

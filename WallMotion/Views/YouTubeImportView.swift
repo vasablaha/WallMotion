@@ -46,7 +46,7 @@ struct YouTubeImportView: View {
                         isFetchingVideoInfo: isFetchingVideoInfo
                     )
                 } else {
-                    YouTubeVideoPreviewSection(videoURL: importManager.downloadedVideoURL!)
+                    OptimizedYouTubeVideoPreviewSection(videoURL: importManager.downloadedVideoURL!)
                 }
                 
                 // ✅ A v YouTubeImportView.swift předejte isProcessing parametr:
