@@ -183,23 +183,29 @@ class WallpaperManager: ObservableObject {
             return true
         }
         
-        // Remove old backup if exists
-        if FileManager.default.fileExists(atPath: backupPath) {
-            let removeResult = await runSudoCommand("/bin/rm", ["-f", backupPath])
-            if !removeResult.success {
-                print("⚠️ Failed to remove old backup: \(removeResult.output)")
+        let script = """
+        do shell script "
+        if [ -f '\(backupPath)' ]; then
+            rm -f '\(backupPath)'
+        fi
+        cp '\(originalPath)' '\(backupPath)'
+        " with administrator privileges
+        """
+        
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                let appleScript = NSAppleScript(source: script)
+                var error: NSDictionary?
+                let _ = appleScript?.executeAndReturnError(&error)
+                
+                if let error = error {
+                    print("❌ Backup creation failed: \(error)")
+                    continuation.resume(returning: false)
+                } else {
+                    print("✅ Backup created at: \(backupPath)")
+                    continuation.resume(returning: true)
+                }
             }
-        }
-        
-        // Create backup using sudo cp
-        let copyResult = await runSudoCommand("/bin/cp", [originalPath, backupPath])
-        
-        if copyResult.success {
-            print("✅ Backup created at: \(backupPath)")
-            return true
-        } else {
-            print("❌ Backup creation failed: \(copyResult.output)")
-            return false
         }
     }
 
@@ -242,85 +248,60 @@ class WallpaperManager: ObservableObject {
             return false
         }
         
-        // Remove original wallpaper file with sudo
-        let removeResult = await runSudoCommand("/bin/rm", ["-f", targetPath])
-        if !removeResult.success {
-            print("❌ Failed to remove original file: \(removeResult.output)")
-            return false
-        }
+        let script = """
+        do shell script "
+        rm -f '\(targetPath)'
+        cp '\(tempPath)' '\(targetPath)'
+        rm -f '\(tempPath)'
+        " with administrator privileges
+        """
         
-        // Copy new file with sudo
-        let copyResult = await runSudoCommand("/bin/cp", [tempPath, targetPath])
-        
-        // Cleanup temp file
-        do {
-            if FileManager.default.fileExists(atPath: tempPath) {
-                try FileManager.default.removeItem(atPath: tempPath)
-            }
-        } catch {
-            print("⚠️ Failed to cleanup temp file: \(error)")
-        }
-        
-        if copyResult.success {
-            print("✅ File replaced at: \(targetPath)")
-            return true
-        } else {
-            print("❌ File replacement failed: \(copyResult.output)")
-            return false
-        }
-    }
-
-    // MARK: - Sudo Command Runner
-    
-    private func runSudoCommand(_ command: String, _ arguments: [String]) async -> (success: Bool, output: String) {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-                task.arguments = [command] + arguments
+            DispatchQueue.global().async {
+                let appleScript = NSAppleScript(source: script)
+                var error: NSDictionary?
+                let _ = appleScript?.executeAndReturnError(&error)
                 
-                let pipe = Pipe()
-                task.standardOutput = pipe
-                task.standardError = pipe
-                
-                do {
-                    try task.run()
-                    task.waitUntilExit()
-                    
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    let success = task.terminationStatus == 0
-                    
-                    continuation.resume(returning: (success, output))
-                } catch {
-                    continuation.resume(returning: (false, "Failed to run sudo command: \(error)"))
+                if let error = error {
+                    print("❌ File replacement failed: \(error)")
+                    continuation.resume(returning: false)
+                } else {
+                    print("✅ File replaced at: \(targetPath)")
+                    continuation.resume(returning: true)
                 }
             }
         }
     }
 
+
     private func reloadWallpaperSystem() async {
-        // Touch the file to trigger system reload using sudo
-        let touchResult = await runSudoCommand("/usr/bin/touch", ["\(wallpaperPath)/\(detectedWallpaper).mov"])
-        if touchResult.success {
-            print("✅ Touched wallpaper file")
-        } else {
-            print("⚠️ Failed to touch file: \(touchResult.output)")
-        }
+        let script = """
+        do shell script "
+        touch '\(wallpaperPath)/\(detectedWallpaper).mov'
+        killall WallpaperAgent 2>/dev/null || true
+        " with administrator privileges
+        """
         
-        // Kill and restart wallpaper agent
-        let killResult = await runSudoCommand("/usr/bin/killall", ["WallpaperAgent"])
-        if killResult.success {
-            print("✅ Wallpaper agent restarted")
-        } else {
-            print("⚠️ Failed to kill WallpaperAgent: \(killResult.output)")
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                let appleScript = NSAppleScript(source: script)
+                var error: NSDictionary?
+                let _ = appleScript?.executeAndReturnError(&error)
+                
+                if let error = error {
+                    print("⚠️ Failed to reload wallpaper system: \(error)")
+                } else {
+                    print("✅ Wallpaper system reloaded")
+                }
+                
+                continuation.resume()
+            }
         }
         
         // Small delay for system to process
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-        
-        print("✅ Wallpaper system reloaded")
     }
+
 
     // MARK: - Shell Helper (Updated with proper paths)
     private func runShell(_ command: String, _ arguments: [String]) -> String {
