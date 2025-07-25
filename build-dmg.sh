@@ -285,10 +285,21 @@ for tool in "${CLI_TOOLS[@]}"; do
                     export PYI_DISABLE_SEMAPHORE="1"
                     export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES"
                     
-                    # Detailní test s timeout
-                    echo "🚀 Running: timeout 10s \"$tool_path\" --version"
-                    test_result=$(timeout 10s "$tool_path" --version 2>&1)
-                    test_exit_code=$?
+                    # Detailní test s timeout (fix pro macOS)
+                    if command -v gtimeout >/dev/null 2>&1; then
+                        echo "🚀 Running: gtimeout 10s \"$tool_path\" --version"
+                        test_result=$(gtimeout 10s "$tool_path" --version 2>&1)
+                        test_exit_code=$?
+                    elif command -v timeout >/dev/null 2>&1; then
+                        echo "🚀 Running: timeout 10s \"$tool_path\" --version"
+                        test_result=$(timeout 10s "$tool_path" --version 2>&1) 
+                        test_exit_code=$?
+                    else
+                        # Fallback bez timeout
+                        echo "🚀 Running: \"$tool_path\" --version (no timeout available)"
+                        test_result=$("$tool_path" --version 2>&1)
+                        test_exit_code=$?
+                    fi
                     
                     echo "📊 Test results:"
                     echo "   Exit code: $test_exit_code"
@@ -386,9 +397,16 @@ else
     echo "⚠️  VideoSaver not found at $VIDEOSAVER_PATH"
 fi
 
-# 9. Podepsání všech ostatních binárních souborů
-echo "✍️ Signing all other binaries..."
-find "$APP_PATH" -type f -perm +111 -not -path "*VideoSaver*" -not -path "*/Contents/MacOS/*" | while read binary; do
+# 9. Podepsání všech ostatních binárních souborů (ale vynech CLI tools!)
+echo "✍️ Signing all other binaries (excluding CLI tools that are already signed)..."
+
+# Najdi všechny binárky, ale vynech CLI tools které už jsou podepsané s entitlements
+find "$APP_PATH" -type f -perm +111 \
+    -not -path "*VideoSaver*" \
+    -not -path "*/Contents/MacOS/*" \
+    -not -path "*yt-dlp*" \
+    -not -path "*ffmpeg*" \
+    -not -path "*ffprobe*" | while read binary; do
     echo "Signing: $binary"
     codesign --force --timestamp --options runtime --sign "$APP_CERT" "$binary" 2>/dev/null || true
 done
