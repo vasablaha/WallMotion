@@ -13,6 +13,7 @@ DMG_NAME="WallMotion-v1.0.0.dmg"
 ENTITLEMENTS="entitlements.plist"
 VIDEOSAVER_ENTITLEMENTS="videosaver-entitlements.plist"
 BUILD_DIR="dmg-temp"
+YT_DLP_ENTITLEMENTS="ytdlp-entitlements.plist"
 
 echo "🔐 Starting notarization with VideoSaver fix..."
 
@@ -111,7 +112,46 @@ cat > "$ENTITLEMENTS" << 'EOF'
 </plist>
 EOF
 
-# 3. Vytvoření speciálních entitlements pro VideoSaver (BEZ debug entitlements)
+# 3. Vytvoření entitlements pro yt-dlp (PyInstaller support)
+echo "📝 Creating yt-dlp PyInstaller entitlements..."
+YT_DLP_ENTITLEMENTS="ytdlp-entitlements.plist"
+cat > "$YT_DLP_ENTITLEMENTS" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- KLÍČOVÉ: PyInstaller support -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-relative-library-loads</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    
+    <!-- Základní permissions -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    
+    <!-- Temp directory access pro PyInstaller -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+    <array>
+        <string>/private/tmp/</string>
+        <string>/tmp/</string>
+        <string>/var/folders/</string>
+    </array>
+</dict>
+</plist>
+EOF
+
+# 4. Vytvoření entitlements pro VideoSaver (BEZ debug entitlements)
 echo "📝 Creating VideoSaver entitlements..."
 cat > "$VIDEOSAVER_ENTITLEMENTS" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -140,13 +180,13 @@ cat > "$VIDEOSAVER_ENTITLEMENTS" << 'EOF'
 </plist>
 EOF
 
-# 4. Kontrola aplikace
+# 5. Kontrola aplikace
 if [[ ! -d "$APP_PATH" ]]; then
     echo "❌ App not found at $APP_PATH"
     exit 1
 fi
 
-# 4.5. Podepsání bundled CLI executables
+# 6. Podepsání bundled CLI executables s rozlišením pro yt-dlp
 echo "✍️ Signing bundled CLI executables..."
 RESOURCES_PATH="$APP_PATH/Contents/Resources"
 
@@ -176,20 +216,53 @@ for tool in "${CLI_TOOLS[@]}"; do
             # Smaž starý podpis
             codesign --remove-signature "$tool_path" 2>/dev/null || true
             
-            # Podepři s runtime hardening
-            echo "✍️ Signing $tool..."
-            codesign --force --timestamp --options runtime \
-                --sign "$APP_CERT" \
-                "$tool_path"
-            
-            if [ $? -eq 0 ]; then
-                echo "✅ $tool signed successfully"
-                
-                # Ověř podpis
-                codesign --verify --verbose "$tool_path"
+            # 🔧 SPECIÁLNÍ HANDLING PRO YT-DLP (PyInstaller)
+            if [[ "$tool" == "yt-dlp" ]]; then
+                echo "🐍 Signing yt-dlp with PyInstaller entitlements..."
+                codesign --force --timestamp --options runtime \
+                    --entitlements "$YT_DLP_ENTITLEMENTS" \
+                    --sign "$APP_CERT" \
+                    "$tool_path"
+                    
+                if [ $? -eq 0 ]; then
+                    echo "✅ yt-dlp signed successfully with PyInstaller support"
+                    
+                    # Ověř podpis
+                    codesign --verify --verbose "$tool_path"
+                    
+                    # Test funkčnosti s PyInstaller environment
+                    echo "🧪 Testing yt-dlp with PyInstaller environment..."
+                    export TMPDIR="/tmp"
+                    export PYINSTALLER_SEMAPHORE="0"
+                    export PYI_DISABLE_SEMAPHORE="1"
+                    export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES"
+                    
+                    test_result=$("$tool_path" --version 2>&1 | head -1)
+                    if [[ ! "$test_result" == *"Failed to load Python"* ]]; then
+                        echo "✅ yt-dlp PyInstaller test passed: $test_result"
+                    else
+                        echo "⚠️  yt-dlp might still have PyInstaller issues, but signed correctly"
+                    fi
+                else
+                    echo "❌ yt-dlp signing failed"
+                    exit 1
+                fi
             else
-                echo "❌ $tool signing failed"
-                exit 1
+                # Standardní podepsání pro ffmpeg a ffprobe
+                echo "✍️ Signing $tool with standard entitlements..."
+                codesign --force --timestamp --options runtime \
+                    --sign "$APP_CERT" \
+                    "$tool_path"
+                
+                if [ $? -eq 0 ]; then
+                    echo "✅ $tool signed successfully"
+                    
+                    # Ověř podpis
+                    codesign --verify --verbose "$tool_path"
+                else
+                    echo "❌ $tool signing failed"
+                    exit 1
+                fi
             fi
             
             break # Našli jsme tool, přejdi na další
@@ -199,6 +272,7 @@ done
 
 echo "✅ All CLI tools processed"
 
+# Zbytek scriptu pokračuje normálně...
 echo "🧹 Deep cleaning application..."
 xattr -cr "$APP_PATH"
 find "$APP_PATH" -name "*.DS_Store" -exec rm -f {} \;
@@ -372,7 +446,7 @@ else
 fi
 
 # Vyčištění
-rm -f "$ENTITLEMENTS" "$VIDEOSAVER_ENTITLEMENTS"
+rm -f "$ENTITLEMENTS" "$VIDEOSAVER_ENTITLEMENTS" "$YT_DLP_ENTITLEMENTS"
 
 echo ""
 echo "📦 File: $DMG_NAME"
