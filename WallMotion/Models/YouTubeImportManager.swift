@@ -9,6 +9,25 @@ import Foundation
 import AVFoundation
 import SwiftUI
 
+
+enum DownloadState {
+    case preparing
+    case downloading
+    case converting
+    case finalizing
+    case completed
+}
+
+
+struct ProgressInfo {
+    let state: DownloadState
+    let progress: Double
+    let message: String
+    
+    static let initial = ProgressInfo(state: .preparing, progress: 0.0, message: "Preparing download...")
+}
+
+
 @MainActor
 class YouTubeImportManager: ObservableObject {
     // MARK: - Published Properties
@@ -210,18 +229,22 @@ class YouTubeImportManager: ObservableObject {
                 }
             }
         }
+    
+    
+    // MARK: - Working downloadVideo Function
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
-        print("🎥 Starting YouTube download on background thread...")
+        print("🎥 Starting optimized YouTube download...")
 
         let deps = dependenciesManager.checkDependencies()
         guard deps.ytdlp else {
             throw YouTubeError.ytDlpNotFound
         }
 
-        // ✅ UI update na main thread
+        // ✅ PREPARATION PHASE - no fake progress jumps
         await MainActor.run {
             isDownloading = true
             downloadProgress = 0.0
+            progressCallback(0.0, "Preparing download...")
         }
         
         let uniqueID = UUID().uuidString
@@ -232,8 +255,7 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.ytDlpNotFound
         }
         
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            // ✅ Process na background thread
+        return try await withCheckedThrowingContinuation { continuation in
             Task.detached {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
@@ -275,9 +297,10 @@ class YouTubeImportManager: ObservableObject {
                 task.standardOutput = outputPipe
                 task.standardError = errorPipe
                 
-                // Monitor progress on background thread
                 let outputCollector = OutputCollector()
                 let errorCollector = OutputCollector()
+                
+                var hasStartedDownloading = false
                 
                 outputPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
@@ -288,9 +311,38 @@ class YouTubeImportManager: ObservableObject {
                             await outputCollector.append(data)
                         }
                         
-                        // ✅ Progress update na main thread
-                        Task { @MainActor in
-                            self.parseDownloadProgress(output, progressCallback: progressCallback)
+                        // Parse download progress
+                        let lines = output.components(separatedBy: .newlines)
+                        for line in lines {
+                            // Detect download start
+                            if line.contains("[download]") && line.contains("Destination:") && !hasStartedDownloading {
+                                hasStartedDownloading = true
+                                Task { @MainActor in
+                                    progressCallback(0.0, "Starting download...")
+                                }
+                            }
+                            
+                            // Parse progress
+                            if line.contains("[download]") && line.contains("%") && hasStartedDownloading {
+                                let components = line.components(separatedBy: " ")
+                                for component in components {
+                                    if component.contains("%") {
+                                        let percentString = component.replacingOccurrences(of: "%", with: "")
+                                        if let percent = Double(percentString) {
+                                            let progress = percent / 100.0
+                                            
+                                            Task { @MainActor in
+                                                self.downloadProgress = progress
+                                                let message = progress >= 1.0 ?
+                                                    "Download completed, preparing conversion..." :
+                                                    "Downloading: \(Int(percent))%"
+                                                progressCallback(progress, message)
+                                            }
+                                            break
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -308,95 +360,578 @@ class YouTubeImportManager: ObservableObject {
                     outputPipe.fileHandleForReading.readabilityHandler = nil
                     errorPipe.fileHandleForReading.readabilityHandler = nil
                     
-                    if task.terminationStatus == 0 {
-                        Task { @MainActor in
-                            let mp4Files = self.findDownloadedFiles(in: self.tempDirectory, matching: baseFilename)
+                    Task {
+                        if task.terminationStatus == 0 {
+                            // Find downloaded file
+                            let downloadedFiles = await self.findDownloadedFiles(in: self.tempDirectory, matching: baseFilename)
                             
-                            if let videoFile = mp4Files.first {
-                                print("✅ Video downloaded: \(videoFile.lastPathComponent)")
+                            if let downloadedFile = downloadedFiles.first {
+                                print("✅ Found downloaded file: \(downloadedFile.path)")
                                 
-                                // Check if we need to re-encode (on background thread)
-                                Task.detached {
-                                    let videoProperties = await self.analyzeVideoProperties(videoFile)
-                                    print("📊 Video info: \(videoProperties.qualityDescription), \(videoProperties.codec)")
-                                    
+                                do {
+                                    // CONVERSION PHASE
                                     await MainActor.run {
-                                        if self.isCodecCompatible(videoProperties.codec) {
-                                            print("✅ Codec is compatible, no re-encoding needed")
-                                            self.isDownloading = false
-                                            self.downloadedVideoURL = videoFile
-                                            continuation.resume(returning: videoFile)
-                                        } else {
-                                            print("🔄 Re-encoding needed...")
-                                            progressCallback(0.0, "Converting to H.264 codec...")
-                                            
-                                            Task {
-                                                do {
-                                                    let reEncodedURL = try await self.smartReEncodeToH264(
-                                                        videoFile,
-                                                        originalInfo: videoProperties,
-                                                        progressCallback: progressCallback
-                                                    )
-                                                    
-                                                    await MainActor.run {
-                                                        print("✅ Re-encoding completed successfully")
-                                                        self.isDownloading = false
-                                                        self.downloadedVideoURL = reEncodedURL
-                                                        continuation.resume(returning: reEncodedURL)
-                                                    }
-                                                } catch {
-                                                    await MainActor.run {
-                                                        print("❌ Re-encoding failed: \(error)")
-                                                        self.isDownloading = false
-                                                        continuation.resume(throwing: error)
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        progressCallback(0.0, "Starting video conversion...")
                                     }
+                                    
+                                    let convertedURL = try await self.convertToWallpaperFormatFixed(
+                                        inputURL: downloadedFile,
+                                        progressCallback: progressCallback
+                                    )
+                                    
+                                    // FINALIZATION
+                                    await MainActor.run {
+                                        progressCallback(1.0, "Finalizing...")
+                                        self.downloadedVideoURL = convertedURL
+                                        self.isDownloading = false
+                                    }
+                                    
+                                    continuation.resume(returning: convertedURL)
+                                    
+                                } catch {
+                                    await MainActor.run {
+                                        self.isDownloading = false
+                                    }
+                                    continuation.resume(throwing: error)
                                 }
                             } else {
-                                print("❌ Downloaded file not found")
-                                self.isDownloading = false
+                                await MainActor.run {
+                                    self.isDownloading = false
+                                }
                                 continuation.resume(throwing: YouTubeError.fileNotFound)
                             }
-                        }
-                    } else {
-                        print("❌ Download failed with exit code: \(task.terminationStatus)")
-                        
-                        Task {
+                        } else {
                             let errorString = await errorCollector.getString()
-                            print("Error output: \(errorString)")
-                            
                             await MainActor.run {
                                 self.isDownloading = false
-                                continuation.resume(throwing: YouTubeError.downloadFailed)
                             }
+                            print("❌ Download failed: \(errorString)")
+                            continuation.resume(throwing: YouTubeError.downloadError(errorString))
                         }
                     }
                 }
                 
                 do {
                     try task.run()
-                    
-                    // ✅ Store download task na main thread
                     await MainActor.run {
                         self.downloadTask = task
-                        progressCallback(0.05, "Starting download...")
                     }
-                    
                 } catch {
-                    print("❌ Failed to start download: \(error)")
-                    
                     await MainActor.run {
                         self.isDownloading = false
-                        continuation.resume(throwing: YouTubeError.downloadFailed)
+                    }
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+
+    
+    
+    // MARK: - Fixed Conversion Function
+    private func convertToWallpaperFormatFixed(inputURL: URL, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
+        print("🎬 Starting video conversion...")
+        
+        guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
+            throw YouTubeError.ffmpegNotFound
+        }
+        
+        let outputURL = tempDirectory.appendingPathComponent("wallpaper_\(UUID().uuidString).mp4")
+        
+        // Get video duration using ffprobe
+        let duration = try await getVideoDuration(from: inputURL)
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffmpegPath)
+                
+                task.arguments = [
+                    "-i", inputURL.path,
+                    "-t", String(duration),
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "18",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-an",
+                    "-avoid_negative_ts", "make_zero",
+                    "-y",
+                    outputURL.path
+                ]
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                let outputCollector = OutputCollector()
+                let errorCollector = OutputCollector()
+                
+                Task { @MainActor in
+                    progressCallback(0.0, "Converting video...")
+                }
+                
+                outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        let output = String(data: data, encoding: .utf8) ?? ""
+                        
+                        Task {
+                            await outputCollector.append(data)
+                        }
+                        
+                        // Parse FFmpeg progress
+                        let lines = output.components(separatedBy: .newlines)
+                        for line in lines {
+                            if line.contains("time=") {
+                                let timePattern = "time=([0-9:]+\\.[0-9]+)"
+                                if let regex = try? NSRegularExpression(pattern: timePattern, options: []) {
+                                    let nsString = line as NSString
+                                    let results = regex.matches(in: line, options: [], range: NSMakeRange(0, nsString.length))
+                                    
+                                    for match in results {
+                                        if match.numberOfRanges > 1 {
+                                            let timeString = nsString.substring(with: match.range(at: 1))
+                                            
+                                            // Parse time locally
+                                            let components = timeString.components(separatedBy: ":")
+                                            var currentTime: Double = 0
+                                            
+                                            if components.count == 3 {
+                                                if let hours = Double(components[0]),
+                                                   let minutes = Double(components[1]),
+                                                   let seconds = Double(components[2]) {
+                                                    currentTime = hours * 3600 + minutes * 60 + seconds
+                                                }
+                                            } else if components.count == 2 {
+                                                if let minutes = Double(components[0]),
+                                                   let seconds = Double(components[1]) {
+                                                    currentTime = minutes * 60 + seconds
+                                                }
+                                            }
+                                            
+                                            if currentTime > 0 && duration > 0 {
+                                                let progress = min(currentTime / duration, 1.0)
+                                                let percentage = Int(progress * 100)
+                                                
+                                                Task { @MainActor in
+                                                    progressCallback(progress, "Converting: \(percentage)%")
+                                                }
+                                                return
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        Task {
+                            await errorCollector.append(data)
+                        }
+                    }
+                }
+                
+                task.terminationHandler = { task in
+                    outputPipe.fileHandleForReading.readabilityHandler = nil
+                    errorPipe.fileHandleForReading.readabilityHandler = nil
+                    
+                    Task {
+                        if task.terminationStatus == 0 && FileManager.default.fileExists(atPath: outputURL.path) {
+                            await MainActor.run {
+                                progressCallback(1.0, "Conversion completed!")
+                            }
+                            
+                            print("✅ Conversion completed successfully")
+                            continuation.resume(returning: outputURL)
+                        } else {
+                            let errorString = await errorCollector.getString()
+                            print("❌ Conversion failed: \(errorString)")
+                            continuation.resume(throwing: YouTubeError.processingFailed)
+                        }
+                    }
+                }
+                
+                do {
+                    try task.run()
+                } catch {
+                    print("❌ Failed to start conversion: \(error)")
+                    continuation.resume(throwing: YouTubeError.processingFailed)
+                }
+            }
+        }
+    }
+
+    
+    // MARK: - Helper Functions (nonisolated)
+    private func parseTimeStringLocal(_ timeString: String) -> Double? {
+        let components = timeString.components(separatedBy: ":")
+        guard components.count >= 2 else { return nil }
+        
+        var totalSeconds: Double = 0
+        
+        if components.count == 3 {
+            // HH:MM:SS.ms format
+            if let hours = Double(components[0]),
+               let minutes = Double(components[1]),
+               let seconds = Double(components[2]) {
+                totalSeconds = hours * 3600 + minutes * 60 + seconds
+            }
+        } else if components.count == 2 {
+            // MM:SS.ms format
+            if let minutes = Double(components[0]),
+               let seconds = Double(components[1]) {
+                totalSeconds = minutes * 60 + seconds
+            }
+        }
+        
+        return totalSeconds > 0 ? totalSeconds : nil
+    }
+
+    
+    @MainActor
+    private func parseOptimizedFFmpegProgress(_ output: String, totalDuration: Double, progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // ✅ Parse time= and out_time_ms for better accuracy
+            if line.contains("out_time_ms=") {
+                let timePattern = "out_time_ms=([0-9]+)"
+                if let regex = try? NSRegularExpression(pattern: timePattern, options: []) {
+                    let nsString = line as NSString
+                    let results = regex.matches(in: line, options: [], range: NSMakeRange(0, nsString.length))
+                    
+                    for match in results {
+                        if match.numberOfRanges > 1 {
+                            let timeString = nsString.substring(with: match.range(at: 1))
+                            if let timeMicroseconds = Double(timeString) {
+                                let currentTime = timeMicroseconds / 1_000_000 // Convert to seconds
+                                if totalDuration > 0 {
+                                    let progress = min(currentTime / totalDuration, 1.0)
+                                    let percentage = Int(progress * 100)
+                                    
+                                    progressCallback(progress, "Converting: \(percentage)%")
+                                    return
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // ✅ Fallback to time= format
+            else if line.contains("time=") {
+                let timePattern = "time=([0-9:]+\\.[0-9]+)"
+                if let regex = try? NSRegularExpression(pattern: timePattern, options: []) {
+                    let nsString = line as NSString
+                    let results = regex.matches(in: line, options: [], range: NSMakeRange(0, nsString.length))
+                    
+                    for match in results {
+                        if match.numberOfRanges > 1 {
+                            let timeString = nsString.substring(with: match.range(at: 1))
+                            if let currentTime = parseTimeString(timeString), totalDuration > 0 {
+                                let progress = min(currentTime / totalDuration, 1.0)
+                                let percentage = Int(progress * 100)
+                                
+                                progressCallback(progress, "Converting: \(percentage)%")
+                                return
+                            }
+                        }
                     }
                 }
             }
         }
     }
     
+    // MARK: - Fixed Progress Parsing (MainActor isolated)
+    @MainActor
+    private func parseOptimizedDownloadProgress(_ output: String,
+                                              currentState: inout DownloadState,
+                                              hasStartedDownloading: inout Bool,
+                                              progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // ✅ Detect actual download start
+            if line.contains("[download]") && line.contains("Destination:") {
+                if !hasStartedDownloading {
+                    currentState = .downloading
+                    hasStartedDownloading = true
+                    progressCallback(0.0, "Starting download...")
+                    print("📥 Download phase started")
+                }
+                continue
+            }
+            
+            // ✅ Parse download progress only after download starts
+            if line.contains("[download]") && line.contains("%") && hasStartedDownloading {
+                let components = line.components(separatedBy: " ")
+                for component in components {
+                    if component.contains("%") {
+                        let percentString = component.replacingOccurrences(of: "%", with: "")
+                        if let percent = Double(percentString) {
+                            let progress = percent / 100.0
+                            
+                            // Only update for significant changes
+                            if abs(progress - downloadProgress) > 0.01 || progress >= 1.0 {
+                                print("📊 Download progress: \(percent)%")
+                                
+                                self.downloadProgress = progress
+                                
+                                // ✅ Smart progress messages
+                                let message = progress >= 1.0 ?
+                                    "Download completed, preparing conversion..." :
+                                    "Downloading: \(Int(percent))%"
+                                
+                                progressCallback(progress, message)
+                            }
+                            break
+                        }
+                    }
+                }
+            }
+            
+            // ✅ Detect conversion start
+            if line.contains("[Merger]") || line.contains("muxing") {
+                currentState = .converting
+                progressCallback(0.95, "Finalizing download...")
+                print("🔄 Download finalization phase")
+            }
+        }
+    }
+    
+    // MARK: - Fixed Conversion Function
+    private func convertToOptimizedWallpaperFormat(inputURL: URL, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
+        print("🎬 Starting optimized video conversion...")
+        
+        guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
+            throw YouTubeError.ffmpegNotFound
+        }
+        
+        // ✅ Clear transition message
+        await MainActor.run {
+            progressCallback(0.0, "Analyzing video...")
+        }
+        
+        // Get basic video info for duration
+        let videoInfo = try await getBasicVideoInfo(from: inputURL)
+        let duration = videoInfo.duration
+        
+        let outputURL = tempDirectory.appendingPathComponent("wallpaper_\(UUID().uuidString).mp4")
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffmpegPath)
+                
+                task.arguments = [
+                    "-i", inputURL.path,
+                    "-t", String(duration),
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "18",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-an",
+                    "-avoid_negative_ts", "make_zero",
+                    "-progress", "pipe:1",  // ✅ Better progress output
+                    "-y",
+                    outputURL.path
+                ]
+                
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = errorPipe
+                
+                let outputCollector = OutputCollector()
+                let errorCollector = OutputCollector()
+                
+                // ✅ Start conversion message
+                Task { @MainActor in
+                    progressCallback(0.0, "Converting video...")
+                }
+                
+                outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        let output = String(data: data, encoding: .utf8) ?? ""
+                        
+                        Task {
+                            await outputCollector.append(data)
+                        }
+                        
+                        // ✅ Enhanced FFmpeg progress parsing
+                        Task { @MainActor in
+                            self.parseOptimizedFFmpegProgress(output,
+                                                            totalDuration: duration,
+                                                            progressCallback: progressCallback)
+                        }
+                    }
+                }
+                
+                errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        Task {
+                            await errorCollector.append(data)
+                        }
+                    }
+                }
+                
+                task.terminationHandler = { task in
+                    outputPipe.fileHandleForReading.readabilityHandler = nil
+                    errorPipe.fileHandleForReading.readabilityHandler = nil
+                    
+                    Task {
+                        if task.terminationStatus == 0 && FileManager.default.fileExists(atPath: outputURL.path) {
+                            // ✅ Quick final message, no hanging
+                            await MainActor.run {
+                                progressCallback(1.0, "Conversion completed!")
+                            }
+                            
+                            print("✅ Conversion completed successfully")
+                            continuation.resume(returning: outputURL)
+                        } else {
+                            let errorString = await errorCollector.getString()
+                            print("❌ Conversion failed: \(errorString)")
+                            continuation.resume(throwing: YouTubeError.processingFailed)
+                        }
+                    }
+                }
+                
+                do {
+                    try task.run()
+                } catch {
+                    print("❌ Failed to start conversion: \(error)")
+                    continuation.resume(throwing: YouTubeError.processingFailed)
+                }
+            }
+        }
+    }
+
+    
+    
+    // MARK: - Fixed Video Properties Function
+    private func getBasicVideoInfo(from url: URL) async throws -> (duration: Double, resolution: CGSize) {
+        guard let ffprobePath = dependenciesManager.findExecutablePath(for: "ffprobe") else {
+            throw YouTubeError.ffmpegNotFound
+        }
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffprobePath)
+                task.arguments = [
+                    "-v", "quiet",
+                    "-print_format", "json",
+                    "-show_format",
+                    "-show_streams",
+                    url.path
+                ]
+                
+                let outputPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = Pipe()
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    
+                    if task.terminationStatus == 0 {
+                        // Parse JSON output
+                        if let jsonData = output.data(using: .utf8),
+                           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                            
+                            var duration: Double = 30.0 // Default fallback
+                            var resolution = CGSize(width: 1920, height: 1080) // Default fallback
+                            
+                            // Get duration from format
+                            if let format = json["format"] as? [String: Any],
+                               let durationStr = format["duration"] as? String,
+                               let parsedDuration = Double(durationStr) {
+                                duration = parsedDuration
+                            }
+                            
+                            // Get resolution from first video stream
+                            if let streams = json["streams"] as? [[String: Any]] {
+                                for stream in streams {
+                                    if let codecType = stream["codec_type"] as? String, codecType == "video" {
+                                        if let width = stream["width"] as? Int,
+                                           let height = stream["height"] as? Int {
+                                            resolution = CGSize(width: width, height: height)
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            continuation.resume(returning: (duration: duration, resolution: resolution))
+                        } else {
+                            // Fallback values
+                            continuation.resume(returning: (duration: 30.0, resolution: CGSize(width: 1920, height: 1080)))
+                        }
+                    } else {
+                        print("❌ ffprobe failed, using fallback values")
+                        continuation.resume(returning: (duration: 30.0, resolution: CGSize(width: 1920, height: 1080)))
+                    }
+                } catch {
+                    print("❌ ffprobe error: \(error), using fallback values")
+                    continuation.resume(returning: (duration: 30.0, resolution: CGSize(width: 1920, height: 1080)))
+                }
+            }
+        }
+    }
+    
+    // MARK: - Get Video Duration Function
+    private func getVideoDuration(from url: URL) async throws -> Double {
+        guard let ffprobePath = dependenciesManager.findExecutablePath(for: "ffprobe") else {
+            return 30.0 // fallback
+        }
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            Task.detached {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: ffprobePath)
+                task.arguments = [
+                    "-v", "quiet",
+                    "-show_entries", "format=duration",
+                    "-of", "csv=p=0",
+                    url.path
+                ]
+                
+                let outputPipe = Pipe()
+                task.standardOutput = outputPipe
+                task.standardError = Pipe()
+                
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    
+                    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    
+                    if let duration = Double(output.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                        continuation.resume(returning: duration)
+                    } else {
+                        continuation.resume(returning: 30.0) // fallback
+                    }
+                } catch {
+                    continuation.resume(returning: 30.0) // fallback
+                }
+            }
+        }
+    }
+
     
     // MARK: - Enhanced trimVideo with runtime fixes
     func trimVideo(_ inputURL: URL, startTime: Double, endTime: Double, outputPath: URL) async throws {
@@ -780,6 +1315,32 @@ class YouTubeImportManager: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Helper Functions (nonisolated)
+    private static func parseTimeStringStatic(_ timeString: String) -> Double? {
+        let components = timeString.components(separatedBy: ":")
+        guard components.count >= 2 else { return nil }
+        
+        var totalSeconds: Double = 0
+        
+        if components.count == 3 {
+            // HH:MM:SS.ms format
+            if let hours = Double(components[0]),
+               let minutes = Double(components[1]),
+               let seconds = Double(components[2]) {
+                totalSeconds = hours * 3600 + minutes * 60 + seconds
+            }
+        } else if components.count == 2 {
+            // MM:SS.ms format
+            if let minutes = Double(components[0]),
+               let seconds = Double(components[1]) {
+                totalSeconds = minutes * 60 + seconds
+            }
+        }
+        
+        return totalSeconds > 0 ? totalSeconds : nil
+    }
+    
     private func parseTimeString(_ timeString: String) -> Double? {
         let components = timeString.components(separatedBy: ":")
         guard components.count >= 2 else { return nil }
