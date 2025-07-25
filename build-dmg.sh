@@ -11,9 +11,9 @@ APP_PASSWORD="rlyq-jvzp-phum-jtop"  # Vytvoříte na appleid.apple.com
 APP_PATH="build/Build/Products/Release/WallMotion.app"
 DMG_NAME="WallMotion-v1.0.0.dmg"
 ENTITLEMENTS="entitlements.plist"
+YT_DLP_ENTITLEMENTS="ytdlp-entitlements.plist"
 VIDEOSAVER_ENTITLEMENTS="videosaver-entitlements.plist"
 BUILD_DIR="dmg-temp"
-YT_DLP_ENTITLEMENTS="ytdlp-entitlements.plist"
 
 echo "🔐 Starting notarization with VideoSaver fix..."
 
@@ -114,7 +114,6 @@ EOF
 
 # 3. Vytvoření entitlements pro yt-dlp (PyInstaller support)
 echo "📝 Creating yt-dlp PyInstaller entitlements..."
-YT_DLP_ENTITLEMENTS="ytdlp-entitlements.plist"
 cat > "$YT_DLP_ENTITLEMENTS" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -186,7 +185,7 @@ if [[ ! -d "$APP_PATH" ]]; then
     exit 1
 fi
 
-# 6. Podepsání bundled CLI executables s rozlišením pro yt-dlp
+# 6. Podepsání bundled CLI executables s detailním logováním
 echo "✍️ Signing bundled CLI executables..."
 RESOURCES_PATH="$APP_PATH/Contents/Resources"
 
@@ -224,7 +223,7 @@ for tool in "${CLI_TOOLS[@]}"; do
                 echo "📋 yt-dlp entitlements file content:"
                 echo "======================================"
                 cat "$YT_DLP_ENTITLEMENTS"
-                echo "=====================================."
+                echo "======================================"
                 
                 # Debug: Zkontroluj, že entitlements soubor existuje
                 echo "🔍 Entitlements file check:"
@@ -324,47 +323,6 @@ for tool in "${CLI_TOOLS[@]}"; do
                 fi
                 
             else
-                # Standardní podepsání pro ffmpeg a ffprobe (beze změny)
-                echo "✍️ Signing $tool with standard entitlements..."
-                codesign --force --timestamp --options runtime \
-                    --sign "$APP_CERT" \
-                    "$tool_path"
-                
-                if [ $? -eq 0 ]; then
-                    echo "✅ $tool signed successfully"
-                    
-                    # Ověř podpis
-                    codesign --verify --verbose "$tool_path"
-                else
-                    echo "❌ $tool signing failed"
-                    exit 1
-                fi
-            fi
-                    
-                if [ $? -eq 0 ]; then
-                    echo "✅ yt-dlp signed successfully with PyInstaller support"
-                    
-                    # Ověř podpis
-                    codesign --verify --verbose "$tool_path"
-                    
-                    # Test funkčnosti s PyInstaller environment
-                    echo "🧪 Testing yt-dlp with PyInstaller environment..."
-                    export TMPDIR="/tmp"
-                    export PYINSTALLER_SEMAPHORE="0"
-                    export PYI_DISABLE_SEMAPHORE="1"
-                    export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES"
-                    
-                    test_result=$("$tool_path" --version 2>&1 | head -1)
-                    if [[ ! "$test_result" == *"Failed to load Python"* ]]; then
-                        echo "✅ yt-dlp PyInstaller test passed: $test_result"
-                    else
-                        echo "⚠️  yt-dlp might still have PyInstaller issues, but signed correctly"
-                    fi
-                else
-                    echo "❌ yt-dlp signing failed"
-                    exit 1
-                fi
-            else
                 # Standardní podepsání pro ffmpeg a ffprobe
                 echo "✍️ Signing $tool with standard entitlements..."
                 codesign --force --timestamp --options runtime \
@@ -389,14 +347,14 @@ done
 
 echo "✅ All CLI tools processed"
 
-# Zbytek scriptu pokračuje normálně...
+# 7. Deep cleaning application
 echo "🧹 Deep cleaning application..."
 xattr -cr "$APP_PATH"
 find "$APP_PATH" -name "*.DS_Store" -exec rm -f {} \;
 find "$APP_PATH" -name "__pycache__" -exec rm -rf {} \; 2>/dev/null || true
 find "$APP_PATH" -name "*.pyc" -exec rm -f {} \; 2>/dev/null || true
 
-# 5. Speciální oprava VideoSaver
+# 8. Speciální oprava VideoSaver
 VIDEOSAVER_PATH="$APP_PATH/Contents/Resources/VideoSaver"
 if [[ -f "$VIDEOSAVER_PATH" ]]; then
     echo "🔧 Fixing VideoSaver binary..."
@@ -428,7 +386,7 @@ else
     echo "⚠️  VideoSaver not found at $VIDEOSAVER_PATH"
 fi
 
-# 6. Podepsání všech ostatních binárních souborů
+# 9. Podepsání všech ostatních binárních souborů
 echo "✍️ Signing all other binaries..."
 find "$APP_PATH" -type f -perm +111 -not -path "*VideoSaver*" -not -path "*/Contents/MacOS/*" | while read binary; do
     echo "Signing: $binary"
@@ -443,7 +401,7 @@ if [[ -d "$APP_PATH/Contents/Frameworks" ]]; then
     done
 fi
 
-# 7. Podepsání hlavní aplikace
+# 10. Podepsání hlavní aplikace
 echo "✍️ Signing main application..."
 codesign --force --deep --timestamp --options runtime \
     --entitlements "$ENTITLEMENTS" \
@@ -455,7 +413,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 8. Důkladné ověření
+# 11. Důkladné ověření
 echo "🔍 Verifying all signatures..."
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
@@ -466,7 +424,7 @@ else
     exit 1
 fi
 
-# 9. Kontrola konkrétně VideoSaver
+# 12. Kontrola konkrétně VideoSaver
 if [[ -f "$VIDEOSAVER_PATH" ]]; then
     echo "🔍 Final VideoSaver verification..."
     codesign --verify --verbose "$VIDEOSAVER_PATH"
@@ -481,7 +439,7 @@ if [[ -f "$VIDEOSAVER_PATH" ]]; then
     fi
 fi
 
-# 10. Vytvoření DMG
+# 13. Vytvoření DMG
 echo "💿 Creating DMG..."
 rm -rf "$BUILD_DIR"
 rm -f "$DMG_NAME"
@@ -498,7 +456,7 @@ hdiutil create -srcfolder "$BUILD_DIR" \
 
 rm -rf "$BUILD_DIR"
 
-# 11. Podepsání DMG
+# 14. Podepsání DMG
 echo "✍️ Signing DMG..."
 codesign --force --timestamp --sign "$APP_CERT" "$DMG_NAME"
 
@@ -509,7 +467,7 @@ fi
 
 echo "✅ DMG signed successfully"
 
-# 12. Kontrola hesla
+# 15. Kontrola hesla
 if [[ "$APP_PASSWORD" == "your-app-specific-password" ]]; then
     echo ""
     echo "⚠️  Set your app-specific password in the script"
@@ -518,7 +476,7 @@ if [[ "$APP_PASSWORD" == "your-app-specific-password" ]]; then
     exit 0
 fi
 
-# 13. Notarizace
+# 16. Notarizace
 echo "📤 Submitting for notarization..."
 SUBMISSION_RESULT=$(xcrun notarytool submit "$DMG_NAME" \
     --apple-id "$APPLE_ID" \
@@ -562,7 +520,7 @@ else
     fi
 fi
 
-# Vyčištění
+# 17. Vyčištění
 rm -f "$ENTITLEMENTS" "$VIDEOSAVER_ENTITLEMENTS" "$YT_DLP_ENTITLEMENTS"
 
 echo ""
