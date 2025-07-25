@@ -263,9 +263,9 @@ class YouTubeImportManager: ObservableObject {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
                 task.arguments = [
-                    "-f", "401/315/628/bestvideo[height>=2160]/bestvideo[height>=1440]/bestvideo",
+                    "-f", "mp4[height>=2160]/mp4[height>=1440]/best[ext=mp4]/best",  // Preferujeme MP4, ale nemusíme re-enkódovat
                     "--no-playlist",
-                    "--recode-video", "mp4",
+                    // Odebrali jsme --recode-video mp4
                     "--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "--referer", "https://www.youtube.com/",
                     "-o", outputTemplate,
