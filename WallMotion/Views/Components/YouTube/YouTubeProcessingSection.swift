@@ -11,112 +11,86 @@ struct YouTubeProcessingSection: View {
     let progress: Double
     let message: String
     
+    @State private var rotationAngle: Double = 0
+    
+    // ✅ Jednoduchá logika pro rozpoznání spineru
+    private var shouldShowSpinner: Bool {
+        message.contains("Getting video info") ||
+        message.contains("Analyzing") ||
+        message.contains("Reading video metadata") ||
+        message.contains("Preparing optimization")
+    }
+    
     var body: some View {
         VStack(spacing: 16) {
-            // Progress bar s animací
-            if message.contains("Converting") && !message.contains("completed") {
-                // Indeterminate progress bar during conversion
+            // ✅ JASNÉ rozlišení: spinner vs progress bar
+            if shouldShowSpinner {
+                // Kruhový spinner pro analýzu
                 ProgressView()
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .frame(maxWidth: .infinity)
+                    .scaleEffect(1.2)
+                    .progressViewStyle(CircularProgressViewStyle(tint: .blue))
             } else {
-                // Normal progress bar for download/completed
+                // Progress bar pro stahování a konverzi
                 ProgressView(value: progress)
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .frame(maxWidth: .infinity)
-                    .animation(.easeInOut(duration: 0.3), value: progress)
+                    .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                    .frame(height: 6)
             }
             
-            // Status message s ikonami pro různé fáze
+            // Status zpráva s ikonami
             HStack(spacing: 8) {
-                // Ikona podle fáze
+                // Ikona podle typu operace
                 Group {
-                    if message.contains("Downloading") {
+                    if shouldShowSpinner {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.blue)
+                            .scaleEffect(1.1)
+                    } else if message.contains("Downloading") {
                         Image(systemName: "arrow.down.circle.fill")
                             .foregroundColor(.blue)
-                    } else if message.contains("Converting") || message.contains("H.264") {
-                        // ✅ SPINNER PRO CONVERTING místo rotující ikony
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .frame(width: 16, height: 16)
-                    } else if message.contains("completed") || message.contains("successful") {
+                    } else if message.contains("Optimizing") {
+                        Image(systemName: "gearshape.fill")
+                            .foregroundColor(.orange)
+                            .rotationEffect(.degrees(rotationAngle))
+                            .onAppear {
+                                withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
+                                    rotationAngle = 360
+                                }
+                            }
+                    } else if message.contains("completed") || message.contains("successfully") {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
-                    } else if message.contains("Processing") || message.contains("Trim") {
-                        Image(systemName: "scissors")
-                            .foregroundColor(.purple)
                     } else {
-                        Image(systemName: "info.circle.fill")
+                        Image(systemName: "ellipsis.circle.fill")
                             .foregroundColor(.secondary)
                     }
                 }
-                .font(.caption)
                 
                 Text(message)
-                    .font(.caption)
+                    .font(.system(.body, design: .rounded, weight: .medium))
                     .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
                 
                 Spacer()
-                
-                // Zobraz procenta pouze pokud není converting (bez completed)
-                if !message.contains("Converting") || message.contains("completed") {
-                    Text("\(Int(progress * 100))%")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.blue)
-                }
             }
             
-            // Detailní informace pro uživatele
-            if message.contains("Converting") || message.contains("H.264") {
-                Text("Converting video to H.264 format for macOS wallpaper compatibility...")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            } else if message.contains("Processing") || message.contains("Trim") {
-                Text("Trimming video to selected time range and optimizing for wallpaper...")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            } else if message.contains("Downloading") {
-                Text("Downloading video from YouTube in best available quality...")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+            // Progress procenta POUZE pro normální operace
+            if !shouldShowSpinner && progress >= 0 {
+                HStack {
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
             }
         }
-        .padding()
-        .background(
+        .padding(16)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(12)
+        .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(getStrokeColor().opacity(0.3), lineWidth: 1)
-                )
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-    
-    // Helper funkce pro barvu podle fáze
-    private func getStrokeColor() -> Color {
-        if message.contains("Downloading") {
-            return .blue
-        } else if message.contains("Converting") || message.contains("H.264") {
-            return .orange
-        } else if message.contains("completed") || message.contains("successful") {
-            return .green
-        } else if message.contains("Processing") || message.contains("Trim") {
-            return .purple
-        } else {
-            return .blue
-        }
     }
 }
+
 

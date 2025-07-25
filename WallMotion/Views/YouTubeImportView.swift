@@ -21,6 +21,8 @@ struct YouTubeImportView: View {
     @State private var isFetchingVideoInfo = false
     @State private var showingDiagnostics = false
     @State private var diagnosticsReport = ""
+    @State private var isAnalyzing = false
+
     
     let onVideoReady: (URL) -> Void
     
@@ -107,23 +109,6 @@ struct YouTubeImportView: View {
             }
         }
         
-        // Přidejte do YouTubeImportView.swift (do toolbar section)
-
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 12) {
-                    Button(action: {
-                        showingDiagnostics = true
-                    }) {
-                        HStack {
-                            Image(systemName: "stethoscope")
-                            Text("Diagnostics")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
     }
     
     
@@ -177,8 +162,8 @@ struct YouTubeImportView: View {
         
         print("📥 User initiated download for: \(youtubeURL)")
         
-        // ✅ NASTAVIT isProcessing = true HNED NA ZAČÁTKU
         isProcessing = true
+        isAnalyzing = false  // ✅ Reset analyzing state
         processingProgress = 0.0
         processingMessage = "Starting download..."
         
@@ -186,20 +171,26 @@ struct YouTubeImportView: View {
             do {
                 _ = try await importManager.downloadVideo(from: youtubeURL) { progress, message in
                     DispatchQueue.main.async {
-                        processingProgress = progress
-                        processingMessage = message
-                        print("📊 Download progress: \(Int(progress * 100))% - \(message)")
+                        // ✅ KLÍČOVÁ ZMĚNA: Rozlišování mezi stahováním a analýzou
+                        if progress < 0 {
+                            // -1 znamená nekonečný spinner (analýza/konverze)
+                            isAnalyzing = true
+                            processingProgress = 0.5  // Statický progress pro spinner
+                            processingMessage = message
+                        } else {
+                            // Normální progress stahování
+                            isAnalyzing = false
+                            processingProgress = progress
+                            processingMessage = message
+                        }
                         
-                        // ❌ ODSTRAŇTE TENTO BLOK - resetuje isProcessing příliš brzy
-                        // if message.contains("successfully") || message.contains("completed") {
-                        //     isProcessing = false
-                        // }
+                        print("📊 Progress: \(progress >= 0 ? "\(Int(progress * 100))%" : "analyzing") - \(message)")
                     }
                 }
                 
                 await MainActor.run {
-                    // ✅ RESETUJ isProcessing AŽ TADY - po dokončení celé downloadVideo funkce
                     isProcessing = false
+                    isAnalyzing = false
                     print("✅ Download + conversion completed")
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showingVideoInfo = false
@@ -209,9 +200,9 @@ struct YouTubeImportView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
+                    isAnalyzing = false
                     print("❌ Download failed: \(error)")
                     if let ytError = error as? YouTubeError {
-                        print("   YouTube Error: \(ytError.errorDescription ?? "Unknown")")
                         dependencyMessage = ytError.errorDescription ?? "Download failed"
                         showingDependencyAlert = true
                     }
@@ -219,7 +210,8 @@ struct YouTubeImportView: View {
             }
         }
     }
-
+    
+    
     private func processVideo() {
         guard !isProcessing else { return }
         guard let inputURL = importManager.downloadedVideoURL else {

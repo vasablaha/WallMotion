@@ -231,16 +231,19 @@ class YouTubeImportManager: ObservableObject {
         }
     
     
-    // MARK: - Working downloadVideo Function
     func downloadVideo(from urlString: String, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
-        print("🎥 Starting optimized YouTube download...")
+        print("🎥 Starting YouTube download with smart progress...")
 
         let deps = dependenciesManager.checkDependencies()
         guard deps.ytdlp else {
             throw YouTubeError.ytDlpNotFound
         }
 
-        // ✅ PREPARATION PHASE - no fake progress jumps
+        // Reset trackingu pro nový download
+        let progressTracker = ProgressTracker()
+        let debouncer = ProgressDebouncer()
+        await progressTracker.reset()
+
         await MainActor.run {
             isDownloading = true
             downloadProgress = 0.0
@@ -259,14 +262,13 @@ class YouTubeImportManager: ObservableObject {
             Task.detached {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
-                
                 task.arguments = [
                     "-f", "401/315/628/bestvideo[height>=2160]/bestvideo[height>=1440]/bestvideo",
+                    "--no-playlist",
                     "--recode-video", "mp4",
                     "--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "--referer", "https://www.youtube.com/",
                     "-o", outputTemplate,
-                    "--no-playlist",
                     "--newline",
                     "--no-audio",
                     "--no-warnings",
@@ -275,85 +277,23 @@ class YouTubeImportManager: ObservableObject {
                     urlString
                 ]
                 
-                // PyInstaller environment fix
-                var environment = ProcessInfo.processInfo.environment
-                environment["TMPDIR"] = NSTemporaryDirectory()
-                environment["TEMP"] = NSTemporaryDirectory()
-                environment["TMP"] = NSTemporaryDirectory()
-                environment["PYINSTALLER_SEMAPHORE"] = "0"
-                environment["PYI_DISABLE_SEMAPHORE"] = "1"
-                environment["_PYI_SPLASH_IPC"] = "0"
-                environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
-                
-                if let resourcePath = Bundle.main.resourcePath {
-                    let currentPath = environment["PATH"] ?? ""
-                    environment["PATH"] = "\(resourcePath):\(currentPath)"
-                }
-                
-                task.environment = environment
-                
                 let outputPipe = Pipe()
                 let errorPipe = Pipe()
                 task.standardOutput = outputPipe
                 task.standardError = errorPipe
                 
-                let outputCollector = OutputCollector()
-                let errorCollector = OutputCollector()
-                
-                var hasStartedDownloading = false
-                
+                // ✅ Parsuj jen nové řádky, ne celý akumulovaný obsah
                 outputPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    if !data.isEmpty {
-                        let output = String(data: data, encoding: .utf8) ?? ""
-                        
+                    if !data.isEmpty, let output = String(data: data, encoding: .utf8) {
                         Task {
-                            await outputCollector.append(data)
-                        }
-                        
-                        // Parse download progress
-                        let lines = output.components(separatedBy: .newlines)
-                        for line in lines {
-                            // Detect download start
-                            if line.contains("[download]") && line.contains("Destination:") && !hasStartedDownloading {
-                                hasStartedDownloading = true
-                                Task { @MainActor in
-                                    progressCallback(0.0, "Starting download...")
-                                }
-                            }
-                            
-                            // Parse progress
-                            if line.contains("[download]") && line.contains("%") && hasStartedDownloading {
-                                let components = line.components(separatedBy: " ")
-                                for component in components {
-                                    if component.contains("%") {
-                                        let percentString = component.replacingOccurrences(of: "%", with: "")
-                                        if let percent = Double(percentString) {
-                                            let progress = percent / 100.0
-                                            
-                                            Task { @MainActor in
-                                                self.downloadProgress = progress
-                                                let message = progress >= 1.0 ?
-                                                    "Download completed, preparing conversion..." :
-                                                    "Downloading: \(Int(percent))%"
-                                                progressCallback(progress, message)
-                                            }
-                                            break
-                                        }
-                                    }
-                                }
-                            }
+                            await self.parseNewLines(output, progressTracker: progressTracker, debouncer: debouncer, progressCallback: progressCallback)
                         }
                     }
                 }
                 
                 errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if !data.isEmpty {
-                        Task {
-                            await errorCollector.append(data)
-                        }
-                    }
+                    _ = handle.availableData // Jen vyprázdni buffer
                 }
                 
                 task.terminationHandler = { task in
@@ -362,32 +302,34 @@ class YouTubeImportManager: ObservableObject {
                     
                     Task {
                         if task.terminationStatus == 0 {
-                            // Find downloaded file
+                            // ✅ Okamžitě pošli completion, pak pokračuj
+                            await MainActor.run {
+                                progressCallback(1.0, "Download completed")
+                            }
+                            
+                            // Krátká pauza pro UI update
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            
+                            await MainActor.run {
+                                progressCallback(-1, "Getting video info...")
+                            }
+                            
                             let downloadedFiles = await self.findDownloadedFiles(in: self.tempDirectory, matching: baseFilename)
                             
                             if let downloadedFile = downloadedFiles.first {
                                 print("✅ Found downloaded file: \(downloadedFile.path)")
                                 
                                 do {
-                                    // CONVERSION PHASE
-                                    await MainActor.run {
-                                        progressCallback(0.0, "Starting video conversion...")
-                                    }
-                                    
-                                    let convertedURL = try await self.convertToWallpaperFormatFixed(
+                                    let processedURL = try await self.convertToOptimizedWallpaperFormat(
                                         inputURL: downloadedFile,
                                         progressCallback: progressCallback
                                     )
                                     
-                                    // FINALIZATION
                                     await MainActor.run {
-                                        progressCallback(1.0, "Finalizing...")
-                                        self.downloadedVideoURL = convertedURL
                                         self.isDownloading = false
                                     }
                                     
-                                    continuation.resume(returning: convertedURL)
-                                    
+                                    continuation.resume(returning: processedURL)
                                 } catch {
                                     await MainActor.run {
                                         self.isDownloading = false
@@ -395,39 +337,97 @@ class YouTubeImportManager: ObservableObject {
                                     continuation.resume(throwing: error)
                                 }
                             } else {
+                                print("❌ No downloaded file found")
                                 await MainActor.run {
                                     self.isDownloading = false
                                 }
-                                continuation.resume(throwing: YouTubeError.fileNotFound)
+                                continuation.resume(throwing: YouTubeError.downloadFailed)
                             }
                         } else {
-                            let errorString = await errorCollector.getString()
+                            print("❌ Download failed with status: \(task.terminationStatus)")
                             await MainActor.run {
                                 self.isDownloading = false
                             }
-                            print("❌ Download failed: \(errorString)")
-                            continuation.resume(throwing: YouTubeError.downloadError(errorString))
+                            continuation.resume(throwing: YouTubeError.downloadFailed)
                         }
                     }
                 }
                 
                 do {
                     try task.run()
-                    await MainActor.run {
-                        self.downloadTask = task
-                    }
                 } catch {
-                    await MainActor.run {
-                        self.isDownloading = false
-                    }
-                    continuation.resume(throwing: error)
+                    continuation.resume(throwing: YouTubeError.downloadFailed)
                 }
             }
         }
     }
 
-
     
+    
+    // ✅ 2. NOVÁ funkce POUZE pro stahování - bez mixování s analýzou
+    private func parseDownloadProgressOnly(_ output: String, progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // POUZE download progress
+            if line.contains("[download]") && line.contains("%") {
+                let components = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                
+                for component in components {
+                    if component.contains("%") {
+                        let percentString = component.replacingOccurrences(of: "%", with: "")
+                        if let percent = Double(percentString) {
+                            let progress = percent / 100.0
+                            
+                            if progress >= 1.0 {
+                                Task { @MainActor in
+                                    progressCallback(1.0, "Download completed")
+                                }
+                            } else {
+                                let message = "Downloading: \(Int(percent))%"
+                                Task { @MainActor in
+                                    progressCallback(progress, message)
+                                }
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    private func parseNewLines(_ newOutput: String, progressTracker: ProgressTracker, debouncer: ProgressDebouncer, progressCallback: @escaping (Double, String) -> Void) async {
+        
+        let lines = newOutput.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // ✅ Zpracuj jen nové řádky
+            guard await progressTracker.isNewLine(line) else { continue }
+            
+            // Parsuj download progress
+            if line.contains("[download]") && line.contains("%") {
+                let components = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                
+                for component in components {
+                    if component.contains("%") {
+                        let percentString = component.replacingOccurrences(of: "%", with: "")
+                        if let percent = Double(percentString), percent >= 0 && percent <= 100 {
+                            let progress = percent / 100.0
+                            let message = "Downloading: \(Int(percent))%"
+                            
+                            // ✅ Aktualizuj jen když je významná změna
+                            if await progressTracker.shouldUpdate(progress: progress, message: message) {
+                                await debouncer.scheduleUpdate(progress, message, callback: progressCallback)
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     
     // MARK: - Fixed Conversion Function
     private func convertToWallpaperFormatFixed(inputURL: URL, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
@@ -706,24 +706,28 @@ class YouTubeImportManager: ObservableObject {
         }
     }
     
-    // MARK: - Fixed Conversion Function
     private func convertToOptimizedWallpaperFormat(inputURL: URL, progressCallback: @escaping (Double, String) -> Void) async throws -> URL {
-        print("🎬 Starting optimized video conversion...")
+        print("🎬 Starting video conversion...")
         
         guard let ffmpegPath = dependenciesManager.findExecutablePath(for: "ffmpeg") else {
             throw YouTubeError.ffmpegNotFound
         }
         
-        // ✅ Clear transition message
         await MainActor.run {
-            progressCallback(0.0, "Analyzing video...")
+            progressCallback(-1, "Analyzing video properties...")
         }
         
-        // Get basic video info for duration
         let videoInfo = try await getBasicVideoInfo(from: inputURL)
         let duration = videoInfo.duration
         
+        await MainActor.run {
+            progressCallback(-1, "Preparing optimization...")
+        }
+        
         let outputURL = tempDirectory.appendingPathComponent("wallpaper_\(UUID().uuidString).mp4")
+        
+        // Krátká pauza pro UI update
+        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 sekunda
         
         return try await withCheckedThrowingContinuation { continuation in
             Task.detached {
@@ -734,73 +738,52 @@ class YouTubeImportManager: ObservableObject {
                     "-i", inputURL.path,
                     "-t", String(duration),
                     "-c:v", "libx264",
-                    "-preset", "medium",
-                    "-crf", "18",
+                    "-preset", "fast", // ✅ Rychlejší preset
+                    "-crf", "20",      // ✅ Trochu nižší kvalita pro rychlost
                     "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
-                    "-an",
-                    "-avoid_negative_ts", "make_zero",
-                    "-progress", "pipe:1",  // ✅ Better progress output
                     "-y",
                     outputURL.path
                 ]
                 
-                let outputPipe = Pipe()
                 let errorPipe = Pipe()
-                task.standardOutput = outputPipe
                 task.standardError = errorPipe
                 
-                let outputCollector = OutputCollector()
-                let errorCollector = OutputCollector()
-                
-                // ✅ Start conversion message
-                Task { @MainActor in
-                    progressCallback(0.0, "Converting video...")
+                await MainActor.run {
+                    progressCallback(0.0, "Optimizing video...")
                 }
                 
-                outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if !data.isEmpty {
-                        let output = String(data: data, encoding: .utf8) ?? ""
-                        
-                        Task {
-                            await outputCollector.append(data)
-                        }
-                        
-                        // ✅ Enhanced FFmpeg progress parsing
-                        Task { @MainActor in
-                            self.parseOptimizedFFmpegProgress(output,
-                                                            totalDuration: duration,
-                                                            progressCallback: progressCallback)
-                        }
-                    }
-                }
+                // ✅ Jednoduchý monitoring bez parsingu progress
+                let conversionTracker = ProgressTracker()
+                await conversionTracker.reset()
                 
-                errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if !data.isEmpty {
-                        Task {
-                            await errorCollector.append(data)
+                // ✅ Simulovaný progress každé 2 sekundy
+                let progressTask = Task {
+                    var simulatedProgress: Double = 0.1
+                    
+                    while simulatedProgress < 0.9 && !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 sekundy
+                        
+                        simulatedProgress += 0.1
+                        let message = "Optimizing: \(Int(simulatedProgress * 100))%"
+                        
+                        await MainActor.run {
+                            progressCallback(simulatedProgress, message)
                         }
                     }
                 }
                 
                 task.terminationHandler = { task in
-                    outputPipe.fileHandleForReading.readabilityHandler = nil
-                    errorPipe.fileHandleForReading.readabilityHandler = nil
+                    progressTask.cancel()
                     
                     Task {
-                        if task.terminationStatus == 0 && FileManager.default.fileExists(atPath: outputURL.path) {
-                            // ✅ Quick final message, no hanging
+                        if task.terminationStatus == 0 {
                             await MainActor.run {
-                                progressCallback(1.0, "Conversion completed!")
+                                progressCallback(1.0, "Video optimized successfully!")
                             }
-                            
-                            print("✅ Conversion completed successfully")
                             continuation.resume(returning: outputURL)
                         } else {
-                            let errorString = await errorCollector.getString()
-                            print("❌ Conversion failed: \(errorString)")
+                            print("❌ Conversion failed with status: \(task.terminationStatus)")
                             continuation.resume(throwing: YouTubeError.processingFailed)
                         }
                     }
@@ -808,14 +791,71 @@ class YouTubeImportManager: ObservableObject {
                 
                 do {
                     try task.run()
+                    task.waitUntilExit()
                 } catch {
+                    progressTask.cancel()
                     print("❌ Failed to start conversion: \(error)")
                     continuation.resume(throwing: YouTubeError.processingFailed)
                 }
             }
         }
     }
-
+    
+    // ✅ 4. STABILNÍ ffmpeg progress parsing - bez šílených hodnot
+    private func parseFFmpegProgressStable(_ output: String, duration: Double, progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        // Najdi poslední validní time= řádek
+        var latestTime: Double = 0
+        
+        for line in lines.reversed() {
+            if line.contains("time=") && !line.contains("N/A") {
+                // ✅ OPRAVENÝ regex - pouze čas ve formátu HH:MM:SS.ms
+                if let timeMatch = line.range(of: #"time=(\d{2}:\d{2}:\d{2}\.\d{2})"#, options: .regularExpression) {
+                    let timeString = String(line[timeMatch]).replacingOccurrences(of: "time=", with: "")
+                    latestTime = parseTimeToSeconds(timeString)
+                    break
+                }
+            }
+        }
+        
+        guard duration > 0 && latestTime > 0 else { return }
+        
+        let progress = min(latestTime / duration, 0.99) // Nikdy 100% dokud se neskončí
+        let percentage = Int(progress * 100)
+        
+        Task { @MainActor in
+            progressCallback(progress, "Optimizing: \(percentage)%")
+        }
+    }
+    
+    // 4. ✅ NOVÁ funkce pro parsing konverze s real-time progressem
+    private func parseConversionProgress(_ output: String, duration: Double, progressCallback: @escaping (Double, String) -> Void) {
+        let lines = output.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // Parse ffmpeg time progress: "time=00:01:23.45"
+            if line.contains("time=") {
+                let timeRegex = try! NSRegularExpression(pattern: "time=([0-9:.-]+)")
+                let nsRange = NSRange(line.startIndex..<line.endIndex, in: line)
+                
+                if let match = timeRegex.firstMatch(in: line, options: [], range: nsRange) {
+                    let timeRange = Range(match.range(at: 1), in: line)!
+                    let timeString = String(line[timeRange])
+                    
+                    let currentTime = parseDurationString(timeString)
+                    if duration > 0 {
+                        let progress = min(currentTime / duration, 0.99) // Never show 100% until complete
+                        let message = "Optimizing: \(Int(progress * 100))%"
+                        
+                        Task { @MainActor in
+                            progressCallback(progress, message)
+                        }
+                    }
+                }
+            }
+        }
+    }
     
     
     // MARK: - Fixed Video Properties Function
@@ -1257,34 +1297,43 @@ class YouTubeImportManager: ObservableObject {
         }
     }
     
+    // 2. ✅ UPRAVENÝ parseDownloadProgress - jasné rozlišení fází
     private func parseDownloadProgress(_ output: String, progressCallback: @escaping (Double, String) -> Void) {
         let lines = output.components(separatedBy: .newlines)
         
         for line in lines {
+            // Standard download progress
             if line.contains("[download]") && line.contains("%") {
-                let components = line.components(separatedBy: " ")
+                let components = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                
                 for component in components {
                     if component.contains("%") {
                         let percentString = component.replacingOccurrences(of: "%", with: "")
                         if let percent = Double(percentString) {
                             let progress = percent / 100.0
                             
-                            // Only update if progress changed significantly or reached 100%
-                            if abs(progress - downloadProgress) > 0.01 || progress >= 1.0 {
-                                print("📊 Download progress: \(percent)%")
-                                
-                                DispatchQueue.main.async {
-                                    self.downloadProgress = progress
-                                    progressCallback(progress, "Downloading: \(Int(percent))%")
-                                }
+                            // ✅ KLÍČOVÁ ZMĚNA: Jakmile dosáhneme 100%, hned přejdeme na "Download completed"
+                            if progress >= 1.0 {
+                                progressCallback(1.0, "Download completed")
+                                // Další zpráva "Getting video info..." se zobrazí v terminationHandler
+                            } else {
+                                let message = "Downloading: \(Int(percent))%"
+                                progressCallback(progress, message)
                             }
-                            break
                         }
+                        break
                     }
                 }
             }
+            
+            // Detect conversion/merger phase
+            if line.contains("[Merger]") || line.contains("muxing") {
+                progressCallback(-1, "Finalizing download...")
+                print("🔄 Download finalization phase")
+            }
         }
     }
+
     
     private func parseFFmpegProgress(_ output: String, totalDuration: Double, progressCallback: @escaping (Double, String) -> Void) {
         let lines = output.components(separatedBy: .newlines)
@@ -1365,13 +1414,22 @@ class YouTubeImportManager: ObservableObject {
         return totalSeconds > 0 ? totalSeconds : nil
     }
     
-    private func parseTimeToSeconds(_ timeString: String) -> Double? {
+    private func parseTimeToSeconds(_ timeString: String) -> Double {
         let components = timeString.components(separatedBy: ":")
-        guard components.count == 3 else { return nil }
+        guard components.count == 3 else { return 0 }
         
         guard let hours = Double(components[0]),
               let minutes = Double(components[1]),
-              let seconds = Double(components[2]) else { return nil }
+              let seconds = Double(components[2]) else {
+            return 0
+        }
+        
+        // ✅ Validace rozumných hodnot
+        guard hours >= 0 && hours < 24,
+              minutes >= 0 && minutes < 60,
+              seconds >= 0 && seconds < 60 else {
+            return 0
+        }
         
         return hours * 3600 + minutes * 60 + seconds
     }
@@ -1911,6 +1969,79 @@ extension YouTubeImportManager {
                 } catch {
                     continuation.resume(returning: (false, "chmod failed: \(error)"))
                 }
+            }
+        }
+    }
+}
+
+
+
+actor ProgressTracker {
+    private var lastProgress: Double = -1
+    private var lastMessage: String = ""
+    private var processedLines: Set<String> = []
+    
+    func shouldUpdate(progress: Double, message: String) -> Bool {
+        // Aktualizuj jen když je výrazná změna nebo nová zpráva
+        let progressChanged = abs(progress - lastProgress) >= 0.01 // 1% change
+        let messageChanged = message != lastMessage
+        
+        if progressChanged || messageChanged {
+            lastProgress = progress
+            lastMessage = message
+            return true
+        }
+        return false
+    }
+    
+    func isNewLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        
+        if processedLines.contains(trimmed) {
+            return false
+        } else {
+            processedLines.insert(trimmed)
+            return true
+        }
+    }
+    
+    func reset() {
+        lastProgress = -1
+        lastMessage = ""
+        processedLines.removeAll()
+    }
+}
+
+// ✅ 2. Debounced progress reporter
+actor ProgressDebouncer {
+    private var lastUpdateTime: Date = Date()
+    private var pendingUpdate: (Double, String)?
+    private var debounceTimer: Task<Void, Never>?
+    
+    func scheduleUpdate(_ progress: Double, _ message: String, callback: @escaping (Double, String) -> Void) {
+        // Zruš předchozí timer
+        debounceTimer?.cancel()
+        
+        // Pro důležité zprávy (100%, chyby) pošli okamžitě
+        if progress >= 1.0 || message.contains("completed") || message.contains("failed") {
+            Task { @MainActor in
+                callback(progress, message)
+            }
+            return
+        }
+        
+        // Pro ostatní použij debouncing
+        pendingUpdate = (progress, message)
+        
+        debounceTimer = Task {
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            
+            if let update = pendingUpdate {
+                Task { @MainActor in
+                    callback(update.0, update.1)
+                }
+                pendingUpdate = nil
             }
         }
     }
