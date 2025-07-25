@@ -239,7 +239,7 @@ class YouTubeImportManager: ObservableObject {
             throw YouTubeError.ytDlpNotFound
         }
 
-        // Reset trackingu pro nový download
+        // ✅ ProgressTracker pro lineární progress
         let progressTracker = ProgressTracker()
         let debouncer = ProgressDebouncer()
         await progressTracker.reset()
@@ -262,10 +262,11 @@ class YouTubeImportManager: ObservableObject {
             Task.detached {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: ytdlpPath)
+                
+                // ✅ Správné argumenty pro MP4 bez recode-video
                 task.arguments = [
-                    "-f", "mp4[height>=2160]/mp4[height>=1440]/best[ext=mp4]/best",  // Preferujeme MP4, ale nemusíme re-enkódovat
+                    "-f", "mp4[height>=2160]/mp4[height>=1440]/best[ext=mp4]/best",
                     "--no-playlist",
-                    // Odebrali jsme --recode-video mp4
                     "--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "--referer", "https://www.youtube.com/",
                     "-o", outputTemplate,
@@ -277,77 +278,148 @@ class YouTubeImportManager: ObservableObject {
                     urlString
                 ]
                 
+                // Environment setup
+                var environment = ProcessInfo.processInfo.environment
+                environment["TMPDIR"] = NSTemporaryDirectory()
+                environment["TEMP"] = NSTemporaryDirectory()
+                environment["TMP"] = NSTemporaryDirectory()
+                environment["PYINSTALLER_SEMAPHORE"] = "0"
+                environment["PYI_DISABLE_SEMAPHORE"] = "1"
+                environment["_PYI_SPLASH_IPC"] = "0"
+                environment["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+                
+                if let resourcePath = Bundle.main.resourcePath {
+                    let currentPath = environment["PATH"] ?? ""
+                    environment["PATH"] = "\(resourcePath):\(currentPath)"
+                }
+                task.environment = environment
+                
                 let outputPipe = Pipe()
                 let errorPipe = Pipe()
                 task.standardOutput = outputPipe
                 task.standardError = errorPipe
                 
-                // ✅ Parsuj jen nové řádky, ne celý akumulovaný obsah
+                let outputCollector = OutputCollector()
+                let errorCollector = OutputCollector()
+                
+                // ✅ OPRAVA: Task.detached pro async funkce
                 outputPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
                     if !data.isEmpty, let output = String(data: data, encoding: .utf8) {
-                        Task {
+                        Task.detached {
+                            await outputCollector.append(data)
+                            
+                            // ✅ parseNewLines s ProgressTracker
                             await self.parseNewLines(output, progressTracker: progressTracker, debouncer: debouncer, progressCallback: progressCallback)
                         }
                     }
                 }
                 
                 errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                    _ = handle.availableData // Jen vyprázdni buffer
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        Task.detached {
+                            await errorCollector.append(data)
+                        }
+                    }
                 }
                 
+                // ✅ KOMPLETNÍ terminationHandler
                 task.terminationHandler = { task in
                     outputPipe.fileHandleForReading.readabilityHandler = nil
                     errorPipe.fileHandleForReading.readabilityHandler = nil
                     
-                    Task {
+                    Task.detached { [weak self] in
+                        guard let self = self else { return }
+                        
                         if task.terminationStatus == 0 {
-                            // ✅ Okamžitě pošli completion, pak pokračuj
-                            await MainActor.run {
-                                progressCallback(1.0, "Download completed")
-                            }
-                            
-                            // Krátká pauza pro UI update
-                            try? await Task.sleep(nanoseconds: 500_000_000)
-                            
-                            await MainActor.run {
-                                progressCallback(-1, "Getting video info...")
-                            }
-                            
+                            // ✅ Najdi stažené soubory
                             let downloadedFiles = await self.findDownloadedFiles(in: self.tempDirectory, matching: baseFilename)
                             
-                            if let downloadedFile = downloadedFiles.first {
-                                print("✅ Found downloaded file: \(downloadedFile.path)")
+                            if let videoFile = downloadedFiles.first {
+                                print("✅ Video downloaded: \(videoFile.lastPathComponent)")
                                 
-                                do {
-                                    let processedURL = try await self.convertToOptimizedWallpaperFormat(
-                                        inputURL: downloadedFile,
-                                        progressCallback: progressCallback
-                                    )
+                                await MainActor.run {
+                                    progressCallback(1.0, "Download completed")
+                                }
+                                
+                                // ✅ KOMPLETNÍ codec flow
+                                let videoProperties = await self.analyzeVideoProperties(videoFile)
+                                print("📊 Video codec: \(videoProperties.codec)")
+                                
+                                if await self.isCodecCompatible(videoProperties.codec) {
+                                    // ✅ H.264 kompatibilní - hotovo
+                                    print("✅ Codec is compatible, no re-encoding needed")
                                     
                                     await MainActor.run {
                                         self.isDownloading = false
+                                        self.downloadedVideoURL = videoFile
                                     }
                                     
-                                    continuation.resume(returning: processedURL)
-                                } catch {
+                                    continuation.resume(returning: videoFile)
+                                    
+                                } else {
+                                    // ✅ VP09/VP8 - potřeba konverze
+                                    print("🔄 VP09 detected, converting to H.264...")
+                                    
                                     await MainActor.run {
-                                        self.isDownloading = false
+                                        progressCallback(-1, "Converting to H.264...")
                                     }
-                                    continuation.resume(throwing: error)
+                                    
+                                    do {
+                                        let convertedURL = try await self.smartReEncodeToH264(videoFile, originalInfo: videoProperties) { progress, message in
+                                            Task { @MainActor in
+                                                if progress < 0 {
+                                                    progressCallback(-1, message)
+                                                } else {
+                                                    // Konverze progress 80-100%
+                                                    progressCallback(0.8 + (progress * 0.2), message)
+                                                }
+                                            }
+                                        }
+                                        
+                                        print("✅ Re-encoding completed successfully")
+                                        
+                                        await MainActor.run {
+                                            self.isDownloading = false
+                                            self.downloadedVideoURL = convertedURL
+                                            progressCallback(1.0, "Video optimized successfully!")
+                                        }
+                                        
+                                        // Cleanup původní VP09 soubor
+                                        try? FileManager.default.removeItem(at: videoFile)
+                                        
+                                        continuation.resume(returning: convertedURL)
+                                        
+                                    } catch {
+                                        print("❌ Re-encoding failed: \(error)")
+                                        
+                                        await MainActor.run {
+                                            self.isDownloading = false
+                                        }
+                                        
+                                        continuation.resume(throwing: error)
+                                    }
                                 }
                             } else {
-                                print("❌ No downloaded file found")
+                                print("❌ Downloaded file not found")
+                                
                                 await MainActor.run {
                                     self.isDownloading = false
                                 }
-                                continuation.resume(throwing: YouTubeError.downloadFailed)
+                                
+                                continuation.resume(throwing: YouTubeError.fileNotFound)
                             }
                         } else {
-                            print("❌ Download failed with status: \(task.terminationStatus)")
+                            print("❌ Download failed with exit code: \(task.terminationStatus)")
+                            
+                            let errorString = await errorCollector.getString()
+                            print("Error output: \(errorString)")
+                            
                             await MainActor.run {
                                 self.isDownloading = false
                             }
+                            
                             continuation.resume(throwing: YouTubeError.downloadFailed)
                         }
                     }
@@ -355,13 +427,24 @@ class YouTubeImportManager: ObservableObject {
                 
                 do {
                     try task.run()
+                    
+                    await MainActor.run {
+                        self.downloadTask = task
+                        // ✅ ŽÁDNÝ fake 5% progress
+                    }
+                    
                 } catch {
+                    print("❌ Failed to start download: \(error)")
+                    
+                    await MainActor.run {
+                        self.isDownloading = false
+                    }
+                    
                     continuation.resume(throwing: YouTubeError.downloadFailed)
                 }
             }
         }
     }
-
     
     
     // ✅ 2. NOVÁ funkce POUZE pro stahování - bez mixování s analýzou
@@ -1287,7 +1370,7 @@ class YouTubeImportManager: ObservableObject {
         return hours * 3600 + minutes * 60 + seconds
     }
     
-    private func findDownloadedFiles(in directory: URL, matching pattern: String) -> [URL] {
+    private func findDownloadedFiles(in directory: URL, matching pattern: String) async -> [URL] {
         do {
             let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             return files.filter { $0.lastPathComponent.contains(pattern) && $0.pathExtension == "mp4" }
@@ -2013,9 +2096,7 @@ actor ProgressTracker {
     }
 }
 
-// ✅ 2. Debounced progress reporter
 actor ProgressDebouncer {
-    private var lastUpdateTime: Date = Date()
     private var pendingUpdate: (Double, String)?
     private var debounceTimer: Task<Void, Never>?
     
@@ -2023,7 +2104,7 @@ actor ProgressDebouncer {
         // Zruš předchozí timer
         debounceTimer?.cancel()
         
-        // Pro důležité zprávy (100%, chyby) pošli okamžitě
+        // Pro důležité zprávy (100%, completion) pošli okamžitě
         if progress >= 1.0 || message.contains("completed") || message.contains("failed") {
             Task { @MainActor in
                 callback(progress, message)

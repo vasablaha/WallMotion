@@ -171,17 +171,17 @@ struct YouTubeImportView: View {
             do {
                 _ = try await importManager.downloadVideo(from: youtubeURL) { progress, message in
                     DispatchQueue.main.async {
-                        // ✅ KLÍČOVÁ ZMĚNA: Rozlišování mezi stahováním a analýzou
+                        // ✅ SPRÁVNÉ rozlišování mezi stahováním a analýzou
                         if progress < 0 {
                             // -1 znamená nekonečný spinner (analýza/konverze)
-                            isAnalyzing = true
-                            processingProgress = 0.5  // Statický progress pro spinner
-                            processingMessage = message
+                            self.isAnalyzing = true
+                            self.processingProgress = 0.5  // Statický progress pro spinner
+                            self.processingMessage = message
                         } else {
                             // Normální progress stahování
-                            isAnalyzing = false
-                            processingProgress = progress
-                            processingMessage = message
+                            self.isAnalyzing = false
+                            self.processingProgress = progress
+                            self.processingMessage = message
                         }
                         
                         print("📊 Progress: \(progress >= 0 ? "\(Int(progress * 100))%" : "analyzing") - \(message)")
@@ -190,17 +190,19 @@ struct YouTubeImportView: View {
                 
                 await MainActor.run {
                     isProcessing = false
-                    isAnalyzing = false
+                    isAnalyzing = false  // ✅ Reset na konci
                     print("✅ Download + conversion completed")
+                    
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showingVideoInfo = false
                         showingTimeSelector = true
                     }
                 }
+                
             } catch {
                 await MainActor.run {
                     isProcessing = false
-                    isAnalyzing = false
+                    isAnalyzing = false  // ✅ Reset při chybě
                     print("❌ Download failed: \(error)")
                     if let ytError = error as? YouTubeError {
                         dependencyMessage = ytError.errorDescription ?? "Download failed"
@@ -211,11 +213,20 @@ struct YouTubeImportView: View {
         }
     }
     
-    
     private func processVideo() {
         guard !isProcessing else { return }
+        
+        // ✅ KONTROLA že downloadedVideoURL je nastavena
         guard let inputURL = importManager.downloadedVideoURL else {
             print("❌ No input video URL available")
+            print("🔍 Debug info:")
+            print("   isDownloading: \(importManager.isDownloading)")
+            print("   downloadProgress: \(importManager.downloadProgress)")
+            print("   downloadedVideoURL: \(importManager.downloadedVideoURL?.path ?? "nil")")
+            
+            // ✅ Zobrazit uživateli lepší chybu
+            dependencyMessage = "Video není připraveno. Zkuste stáhnout video znovu nebo restartovat aplikaci."
+            showingDependencyAlert = true
             return
         }
         
@@ -253,6 +264,9 @@ struct YouTubeImportView: View {
                     print("❌ Video processing failed: \(error)")
                     if let ytError = error as? YouTubeError {
                         dependencyMessage = ytError.errorDescription ?? "Processing failed"
+                        showingDependencyAlert = true
+                    } else {
+                        dependencyMessage = "Video processing failed: \(error.localizedDescription)"
                         showingDependencyAlert = true
                     }
                 }
