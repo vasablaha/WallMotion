@@ -216,13 +216,130 @@ for tool in "${CLI_TOOLS[@]}"; do
             # Smaž starý podpis
             codesign --remove-signature "$tool_path" 2>/dev/null || true
             
-            # 🔧 SPECIÁLNÍ HANDLING PRO YT-DLP (PyInstaller)
+            # 🔧 SPECIÁLNÍ HANDLING PRO YT-DLP (PyInstaller) s detailním logováním
             if [[ "$tool" == "yt-dlp" ]]; then
                 echo "🐍 Signing yt-dlp with PyInstaller entitlements..."
+                
+                # Debug: Zobraz obsah entitlements před podepsáním
+                echo "📋 yt-dlp entitlements file content:"
+                echo "======================================"
+                cat "$YT_DLP_ENTITLEMENTS"
+                echo "=====================================."
+                
+                # Debug: Zkontroluj, že entitlements soubor existuje
+                echo "🔍 Entitlements file check:"
+                ls -la "$YT_DLP_ENTITLEMENTS"
+                
+                # Podepsání s detailním výstupem
+                echo "✍️ Executing codesign command:"
+                echo "codesign --force --timestamp --options runtime --entitlements \"$YT_DLP_ENTITLEMENTS\" --sign \"$APP_CERT\" \"$tool_path\""
+                
                 codesign --force --timestamp --options runtime \
                     --entitlements "$YT_DLP_ENTITLEMENTS" \
                     --sign "$APP_CERT" \
                     "$tool_path"
+                    
+                signing_result=$?
+                
+                if [ $signing_result -eq 0 ]; then
+                    echo "✅ yt-dlp signed successfully with PyInstaller support"
+                    
+                    # Ověř podpis s detailním výstupem
+                    echo "🔍 Detailed signature verification:"
+                    codesign --verify --deep --strict --verbose=4 "$tool_path" 2>&1
+                    
+                    # KLÍČOVÉ: Zobraz skutečné entitlements po podepsání
+                    echo ""
+                    echo "🎯 ACTUAL yt-dlp entitlements after signing:"
+                    echo "=============================================="
+                    codesign --display --entitlements - "$tool_path" 2>/dev/null || echo "❌ Failed to read entitlements"
+                    echo "=============================================="
+                    
+                    # Specificky zkontroluj klíčové PyInstaller entitlements
+                    echo ""
+                    echo "🔑 Key PyInstaller entitlements check:"
+                    entitlements_output=$(codesign --display --entitlements - "$tool_path" 2>/dev/null)
+                    
+                    if [[ "$entitlements_output" == *"disable-library-validation"* ]]; then
+                        echo "✅ disable-library-validation: FOUND"
+                    else
+                        echo "❌ disable-library-validation: MISSING"
+                    fi
+                    
+                    if [[ "$entitlements_output" == *"allow-jit"* ]]; then
+                        echo "✅ allow-jit: FOUND"
+                    else
+                        echo "❌ allow-jit: MISSING"
+                    fi
+                    
+                    if [[ "$entitlements_output" == *"allow-unsigned-executable-memory"* ]]; then
+                        echo "✅ allow-unsigned-executable-memory: FOUND"
+                    else
+                        echo "❌ allow-unsigned-executable-memory: MISSING"
+                    fi
+                    
+                    # Test funkčnosti s PyInstaller environment
+                    echo ""
+                    echo "🧪 Testing yt-dlp with PyInstaller environment..."
+                    export TMPDIR="/tmp"
+                    export PYINSTALLER_SEMAPHORE="0"
+                    export PYI_DISABLE_SEMAPHORE="1"
+                    export OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES"
+                    
+                    # Detailní test s timeout
+                    echo "🚀 Running: timeout 10s \"$tool_path\" --version"
+                    test_result=$(timeout 10s "$tool_path" --version 2>&1)
+                    test_exit_code=$?
+                    
+                    echo "📊 Test results:"
+                    echo "   Exit code: $test_exit_code"
+                    echo "   Output: $test_result"
+                    
+                    if [[ $test_exit_code -eq 0 && ! "$test_result" == *"Failed to load Python"* ]]; then
+                        echo "✅ yt-dlp PyInstaller test passed: $test_result"
+                    else
+                        echo "❌ yt-dlp PyInstaller test failed!"
+                        echo "🔍 Full error output:"
+                        echo "$test_result"
+                        
+                        # Additional diagnostics
+                        echo ""
+                        echo "🔧 Additional diagnostics:"
+                        echo "   File permissions: $(ls -la "$tool_path")"
+                        echo "   File type: $(file "$tool_path")"
+                        echo "   Code signature status: $(codesign --verify "$tool_path" 2>&1 || echo "Verification failed")"
+                    fi
+                    
+                else
+                    echo "❌ yt-dlp signing failed with exit code: $signing_result"
+                    
+                    # Debug why signing failed
+                    echo "🔍 Signing failure diagnostics:"
+                    echo "   Certificate: $APP_CERT"
+                    echo "   Tool path: $tool_path"
+                    echo "   Entitlements file: $YT_DLP_ENTITLEMENTS"
+                    echo "   Entitlements file exists: $(test -f "$YT_DLP_ENTITLEMENTS" && echo "YES" || echo "NO")"
+                    
+                    exit 1
+                fi
+                
+            else
+                # Standardní podepsání pro ffmpeg a ffprobe (beze změny)
+                echo "✍️ Signing $tool with standard entitlements..."
+                codesign --force --timestamp --options runtime \
+                    --sign "$APP_CERT" \
+                    "$tool_path"
+                
+                if [ $? -eq 0 ]; then
+                    echo "✅ $tool signed successfully"
+                    
+                    # Ověř podpis
+                    codesign --verify --verbose "$tool_path"
+                else
+                    echo "❌ $tool signing failed"
+                    exit 1
+                fi
+            fi
                     
                 if [ $? -eq 0 ]; then
                     echo "✅ yt-dlp signed successfully with PyInstaller support"
