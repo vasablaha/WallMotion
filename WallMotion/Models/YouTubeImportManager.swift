@@ -265,7 +265,7 @@ class YouTubeImportManager: ObservableObject {
                 
                 // ✅ Správné argumenty pro MP4 bez recode-video
                 task.arguments = [
-                    "-f", "mp4[height>=2160]/mp4[height>=1440]/best[ext=mp4]/best",
+                    "-f", "mp4[height>=2160]/mp4[height>=1440]/mp4[height>=1080]/best[ext=mp4]/best",
                     "--no-playlist",
                     "--user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "--referer", "https://www.youtube.com/",

@@ -213,9 +213,16 @@ struct ContentView: View {
     // MARK: - Main App View
     
     private var mainAppView: some View {
-        NavigationView {
-            sidebarView
-            mainContentView
+        VStack(spacing: 0) {
+            // ✅ NOVÝ: Top bar s Account Dropdown
+            topBarView
+            
+            // Existující NavigationView
+            NavigationView {
+                sidebarView
+                mainContentView
+            }
+            .navigationViewStyle(DoubleColumnNavigationViewStyle())
         }
         .navigationViewStyle(DoubleColumnNavigationViewStyle())
         .frame(minWidth: 1200, minHeight: 800)
@@ -267,6 +274,39 @@ struct ContentView: View {
         .onAppear {
             checkForFirstTimeTutorial()
         }
+    }
+    
+    private var topBarView: some View {
+        HStack {
+            // Logo a název
+            HStack(spacing: 12) {
+                Image("logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                
+                Text("WallMotion")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .fontDesign(.rounded)
+            }
+            
+            Spacer()
+            
+            // Account Dropdown - jen pokud je uživatel přihlášený
+            if authManager.isAuthenticated {
+                AccountDropdownView()
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.primary.opacity(0.1)),
+            alignment: .bottom
+        )
     }
     
     // MARK: - Main Content View
@@ -381,12 +421,7 @@ struct ContentView: View {
     
     private var sidebarView: some View {
         VStack(spacing: 0) {
-            headerSection
-            
-            Divider()
-                .padding(.horizontal)
-            
-            // Main custom video upload section (priority)
+
             customUploadSection
             
             Divider()
@@ -406,13 +441,15 @@ struct ContentView: View {
             SimpleVideoSaverView()
                 .padding(.vertical, 8)
             
+            Divider()
+                .padding(.horizontal)
+            
             // Help & Tutorial section
             helpSection
             
             Spacer()
             
-            // User info footer
-            userInfoFooter
+            // ❌ ODSTRAŇTE: userInfoFooter - přesunuto do dropdown
         }
         .frame(minWidth: 300, maxWidth: 350)
         .background(sidebarBackground)
