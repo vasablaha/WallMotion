@@ -115,20 +115,27 @@ struct TutorialView: View {
             // Progress indicator
             progressIndicator
             
-            // Main content
+            // Main content area
             if isInSidebar {
                 compactTutorialContent
             } else {
                 fullTutorialContent
             }
+            
+            // FIXED: Vždy zobrazená navigace dole
+            navigationFooter
         }
         .background(backgroundGradient)
         .onAppear {
+            print("📱 TutorialView appeared - Step: \(currentStep)/\(tutorialSteps.count)")
             // Initialize bundled tools when tutorial appears
             Task {
                 await dependenciesManager.initializeBundledExecutables()
                 bundleStatus = dependenciesManager.checkDependencies()
             }
+        }
+        .onChange(of: currentStep) { oldValue, newValue in
+            print("📝 Step changed: \(oldValue) → \(newValue)")
         }
         .sheet(isPresented: $showingDiagnostics) {
             DependencyDiagnosticsView()
@@ -141,46 +148,72 @@ struct TutorialView: View {
     private var progressIndicator: some View {
         HStack {
             ForEach(0..<tutorialSteps.count, id: \.self) { index in
-                Circle()
-                    .fill(index <= currentStep ? Color.accentColor : Color.gray.opacity(0.3))
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(index == currentStep ? 1.2 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentStep)
+                Button(action: {
+                    // ADDED: Direct step navigation
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        currentStep = index
+                    }
+                }) {
+                    Circle()
+                        .fill(index <= currentStep ?
+                              LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                              LinearGradient(colors: [Color.gray.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: index == currentStep ? 16 : 12, height: index == currentStep ? 16 : 12)
+                        .overlay(
+                            Circle()
+                                .stroke(.white, lineWidth: index == currentStep ? 3 : 0)
+                                .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 0.5)
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentStep)
                 
                 if index < tutorialSteps.count - 1 {
                     Rectangle()
-                        .fill(index < currentStep ? Color.accentColor : Color.gray.opacity(0.3))
-                        .frame(height: 2)
+                        .fill(index < currentStep ?
+                              LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing) :
+                              LinearGradient(colors: [Color.gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing))
+                        .frame(height: 3)
+                        .cornerRadius(1.5)
                         .animation(.easeInOut(duration: 0.3), value: currentStep)
                 }
             }
         }
-        .padding(.horizontal, 40)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 50)
+        .padding(.vertical, 24)
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: 0)
+        )
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color(.separatorColor))
+                .opacity(0.3),
+            alignment: .bottom
+        )
     }
     
     // MARK: - Full Tutorial Content
     
     private var fullTutorialContent: some View {
-        VStack(spacing: 30) {
-            Spacer()
-            
-            // Current step content
-            currentStepView
-            
-            Spacer()
-            
-            // Navigation buttons
-            navigationButtons
+        ScrollView {
+            VStack(spacing: 0) {
+                // Current step content with proper centering
+                VStack(spacing: 40) {
+                    currentStepView
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 40)
+                .padding(.vertical, 60)
+            }
         }
-        .padding(.horizontal, 40)
-        .padding(.bottom, 40)
     }
     
     // MARK: - Compact Tutorial Content (for sidebar)
     
     private var compactTutorialContent: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             currentStepHeaderCompact
             
             ScrollView {
@@ -192,13 +225,13 @@ struct TutorialView: View {
                     
                     // Show bundle status for first step
                     if currentStep == 0 {
-                        bundleStatusSection
+                        compactBundleStatusSection
                     }
                 }
                 .padding(.horizontal, 16)
             }
             
-            compactNavigationButtons
+            Spacer(minLength: 60) // Space for navigation
         }
         .padding(.vertical, 16)
     }
@@ -206,26 +239,24 @@ struct TutorialView: View {
     // MARK: - Current Step View
     
     private var currentStepView: some View {
-        VStack(spacing: 30) {
-            // Step icon and phase info
-            VStack(spacing: 20) {
-                // Phase indicator
-                phaseIndicator
-                
-                // Step icon
-                Image(systemName: currentTutorialStep.icon)
-                    .font(.system(size: 80, weight: .light))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: getCurrentPhase().color == .blue ? [.blue, .cyan] : [.green, .mint],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
+        VStack(spacing: 50) {
+            // Phase indicator - consistent position
+            phaseIndicator
             
-            // Step content
-            VStack(spacing: 16) {
+            // Step icon - consistent size
+            Image(systemName: currentTutorialStep.icon)
+                .font(.system(size: 80, weight: .light))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: getCurrentPhase().color == .blue ? [.blue, .cyan] : [.green, .mint],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(height: 80) // Fixed height for icon
+            
+            // Step content - consistent container
+            VStack(spacing: 20) {
                 Text(currentTutorialStep.title)
                     .font(.largeTitle)
                     .fontWeight(.bold)
@@ -241,17 +272,19 @@ struct TutorialView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 40)
+                    .lineSpacing(2)
             }
-            .frame(maxWidth: 600)
+            .frame(maxWidth: 700) // Consistent max width
             
-            // Special content for first step (bundle tools)
+            // Special content section for step 0 only
             if currentStep == 0 {
                 bundleStatusSection
             }
         }
+        .frame(maxWidth: .infinity)
     }
     
     // MARK: - Bundle Status Section
@@ -260,7 +293,7 @@ struct TutorialView: View {
         VStack(spacing: 16) {
             HStack {
                 Text("Bundled Tools Status")
-                    .font(.headline)
+                    .font(.title3)
                     .fontWeight(.semibold)
                 
                 Spacer()
@@ -268,11 +301,11 @@ struct TutorialView: View {
                 Button("Run Diagnostics") {
                     showingDiagnostics = true
                 }
-                .buttonStyle(SecondaryButtonStyle())
+                .buttonStyle(CustomSecondaryButtonStyle())
             }
             
             if let status = bundleStatus {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     bundleToolRow("yt-dlp", status.ytdlp)
                     bundleToolRow("ffmpeg", status.ffmpeg)
                     bundleToolRow("ffprobe", status.ffprobe)
@@ -283,21 +316,30 @@ struct TutorialView: View {
                         .fill(.ultraThinMaterial)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                .stroke(Color(.separatorColor), lineWidth: 1)
                         )
                 )
                 
                 if status.allAvailable {
-                    Text("✅ All YouTube import tools are ready!")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.green)
-                } else {
-                    VStack(spacing: 8) {
-                        Text("⚠️ Some tools may need initialization")
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("All YouTube import tools are ready!")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.green)
+                    }
+                    .padding(.top, 4)
+                } else {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Some tools may need initialization")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.orange)
+                        }
                         
                         Button("Fix Bundle Tools") {
                             Task {
@@ -305,14 +347,24 @@ struct TutorialView: View {
                                 bundleStatus = dependenciesManager.checkDependencies()
                             }
                         }
-                        .buttonStyle(PrimaryButtonStyle())
+                        .buttonStyle(CustomPrimaryButtonStyle())
                     }
+                    .padding(.top, 4)
                 }
             } else {
-                ProgressView("Checking bundle tools...")
-                    .progressViewStyle(CircularProgressViewStyle())
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(1.2)
+                    
+                    Text("Checking bundle tools...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 20)
             }
         }
+        .frame(maxWidth: 600) // Consistent width
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 16)
@@ -321,6 +373,41 @@ struct TutorialView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.blue.opacity(0.2), lineWidth: 1)
                 )
+        )
+    }
+    
+    private var compactBundleStatusSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Tools Status")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Button("Diagnostics") {
+                    showingDiagnostics = true
+                }
+                .buttonStyle(CustomTertiaryButtonStyle())
+            }
+            
+            if let status = bundleStatus {
+                VStack(spacing: 6) {
+                    bundleToolRow("yt-dlp", status.ytdlp)
+                    bundleToolRow("ffmpeg", status.ffmpeg)
+                    bundleToolRow("ffprobe", status.ffprobe)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.ultraThinMaterial)
+                )
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.blue.opacity(0.05))
         )
     }
     
@@ -372,8 +459,19 @@ struct TutorialView: View {
                 }
                 
                 Spacer()
+                
+                Text("\(currentStep + 1)/\(tutorialSteps.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(getCurrentPhase().color.opacity(0.15))
+                    )
             }
         }
+        .padding(.horizontal, 16)
     }
     
     private var phaseIndicator: some View {
@@ -409,48 +507,94 @@ struct TutorialView: View {
         )
     }
     
-    // MARK: - Navigation
+    // MARK: - FIXED Navigation Footer
     
-    private var navigationButtons: some View {
+    private var navigationFooter: some View {
         HStack(spacing: 20) {
-            if currentStep > 0 {
-                Button("Previous") {
-                    previousStep()
+            // Previous button - completely custom
+            Button(action: previousStep) {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                    Text("Previous")
+                        .font(.system(size: 16, weight: .medium))
                 }
-                .buttonStyle(SecondaryButtonStyle())
-                .keyboardShortcut(.leftArrow, modifiers: [])
+                .foregroundColor(currentStep > 0 ? .primary : .secondary)
+                .frame(minWidth: 100)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(currentStep > 0 ? Color(.controlBackgroundColor) : Color.clear)
+                        .stroke(currentStep > 0 ? Color(.separatorColor) : Color.clear, lineWidth: 1)
+                )
             }
+            .buttonStyle(PlainButtonStyle()) // REMOVES ALL DEFAULT STYLING
+            .disabled(currentStep == 0)
+            .keyboardShortcut(.leftArrow, modifiers: [])
             
             Spacer()
             
-            Button(currentStep == tutorialSteps.count - 1 ? "Finish" : "Next") {
-                nextStep()
+            // Step counter - simple design
+            VStack(spacing: 4) {
+                Text("STEP")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .tracking(1)
+                
+                Text("\(currentStep + 1) of \(tutorialSteps.count)")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.quaternaryLabelColor).opacity(0.3))
+            )
+            
+            Spacer()
+            
+            // Next/Finish button - completely custom
+            Button(action: nextStep) {
+                HStack(spacing: 10) {
+                    Text(currentStep == tutorialSteps.count - 1 ? "Finish" : "Next")
+                        .font(.system(size: 16, weight: .semibold))
+                    Image(systemName: currentStep == tutorialSteps.count - 1 ? "checkmark.circle.fill" : "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .foregroundColor(.white)
+                .frame(minWidth: 100)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(
+                            LinearGradient(
+                                colors: currentStep == tutorialSteps.count - 1 ?
+                                    [.green, .mint] : [.blue, .purple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+            }
+            .buttonStyle(PlainButtonStyle()) // REMOVES ALL DEFAULT STYLING
             .keyboardShortcut(currentStep == tutorialSteps.count - 1 ? .return : .rightArrow, modifiers: [])
         }
-    }
-    
-    private var compactNavigationButtons: some View {
-        HStack(spacing: 12) {
-            if currentStep > 0 {
-                Button("←") {
-                    previousStep()
-                }
-                .buttonStyle(TertiaryButtonStyle())
-            }
-            
-            Text("\(currentStep + 1) of \(tutorialSteps.count)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity)
-            
-            Button(currentStep == tutorialSteps.count - 1 ? "✓" : "→") {
-                nextStep()
-            }
-            .buttonStyle(TertiaryButtonStyle())
-        }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 20)
+        .background(
+            .regularMaterial,
+            in: Rectangle()
+        )
+        .overlay(
+            Rectangle()
+                .frame(height: 0.5)
+                .foregroundColor(Color(.separatorColor))
+                .opacity(0.6),
+            alignment: .top
+        )
     }
     
     // MARK: - Computed Properties
@@ -473,23 +617,32 @@ struct TutorialView: View {
         .ignoresSafeArea()
     }
     
-    // MARK: - Navigation Methods
+    // MARK: - Navigation Methods (FIXED)
     
     private func nextStep() {
+        print("🔄 nextStep called - current: \(currentStep), total: \(tutorialSteps.count)")
+        
         if currentStep < tutorialSteps.count - 1 {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                 currentStep += 1
             }
+            print("➡️ Moved to step: \(currentStep)")
         } else {
+            print("🏁 Tutorial completed - calling onComplete")
             onComplete?()
         }
     }
     
     private func previousStep() {
+        print("🔄 previousStep called - current: \(currentStep)")
+        
         if currentStep > 0 {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                 currentStep -= 1
             }
+            print("⬅️ Moved to step: \(currentStep)")
+        } else {
+            print("⚠️ Already at first step")
         }
     }
     
@@ -529,7 +682,7 @@ struct TutorialView: View {
     }
 }
 
-// MARK: - Tutorial Models (unchanged)
+// MARK: - Tutorial Models
 
 struct TutorialStep {
     let title: String
@@ -552,4 +705,67 @@ struct TutorialPhase {
     let icon: String
 }
 
+// MARK: - CUSTOM BUTTON STYLES (UPDATED for better macOS look)
 
+struct CustomPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+            )
+            .foregroundColor(.white)
+            .font(.system(size: 15, weight: .semibold))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+struct CustomSecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.controlBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color(.separatorColor), lineWidth: 1)
+                    )
+            )
+            .foregroundColor(.primary)
+            .font(.system(size: 14, weight: .medium))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+struct CustomTertiaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(.controlBackgroundColor).opacity(0.7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(.separatorColor).opacity(0.5), lineWidth: 0.5)
+                    )
+            )
+            .foregroundColor(.secondary)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
