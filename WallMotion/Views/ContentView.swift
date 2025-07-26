@@ -21,6 +21,8 @@ struct ContentView: View {
     @EnvironmentObject private var dependenciesManager: DependenciesManager
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var deviceManager = DeviceManager.shared
+    @StateObject private var simpleVideoSaverManager = SimpleVideoSaverManager()
+
     
     @State private var selectedVideoURL: URL?
     @State private var selectedLibraryVideo: WallpaperVideo?
@@ -403,8 +405,8 @@ struct ContentView: View {
             Divider()
                 .padding(.horizontal)
             
-            SimpleVideoSaverView()
-                .padding(.vertical, 8)
+            SimpleVideoSaverView(simpleVideoSaverManager: simpleVideoSaverManager)
+
             
             Divider()
                 .padding(.horizontal)

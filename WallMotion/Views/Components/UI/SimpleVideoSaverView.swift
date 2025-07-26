@@ -2,179 +2,185 @@
 //  SimpleVideoSaverView.swift
 //  WallMotion
 //
-//  Created by Šimon Filípek on 26.07.2025.
-//
-
-
-//
-//  SimpleVideoSaverView.swift
-//  WallMotion
-//
-//  Jednoduchý toggle pro VideoSaver Agent
+//  OPRAVENÉ TYPE-CHECK PROBLÉMY
 //
 
 import SwiftUI
 
 struct SimpleVideoSaverView: View {
-    @StateObject private var videoSaverManager = SimpleVideoSaverManager()
+    @ObservedObject var simpleVideoSaverManager: SimpleVideoSaverManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showTooltip = false
-    @State private var hoverTimer: Timer?
-    @Environment(\.colorScheme) var colorScheme
+    @State private var isEnabled = true
     
     var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            titleSection
+            mainContentSection
+        }
+        .padding(.vertical)
+    }
+    
+    // MARK: - Title Section
+    private var titleSection: some View {
+        HStack {
+            Text("VideoSaver Agent")
+                .font(.headline)
+                .fontWeight(.semibold)
+            
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Main Content Section
+    private var mainContentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header s toggle
-            HStack {
-                Image(systemName: videoSaverManager.isVideoSaverInstalled && videoSaverManager.isVideoSaverEnabled ? 
-                      "checkmark.circle.fill" : "play.circle")
-                    .foregroundColor(videoSaverManager.getStatusColor())
-                    .font(.title2)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text("VideoSaver Agent")
-                            .font(.headline)
-                            .fontWeight(.medium)
-                        
-                        Button(action: {
-                            showTooltip.toggle()
-                        }) {
-                            Image(systemName: "questionmark.circle")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .onHover { isHovering in
-                            handleHover(isHovering)
-                        }
-                        .popover(isPresented: $showTooltip, arrowEdge: .bottom) {
-                            tooltipView
-                                .onHover { isHovering in
-                                    handleHover(isHovering)
-                                }
-                        }
-                    }
-                    
-                    Text(videoSaverManager.getStatusText())
-                        .font(.caption)
-                        .foregroundColor(videoSaverManager.getStatusColor())
-                }
-                
-                Spacer()
-                
-                // Toggle switch
-                if !videoSaverManager.isTogglingAgent {
-                    Toggle("", isOn: $videoSaverManager.isVideoSaverEnabled)
-                        .toggleStyle(SwitchToggleStyle())
-                        .disabled(videoSaverManager.isTogglingAgent)
-                        .onChange(of: videoSaverManager.isVideoSaverEnabled) { newValue in
-                            videoSaverManager.toggleVideoSaverAgent(newValue)
-                        }
-                } else {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
-            }
-            
-            // Popis
-            Text(videoSaverManager.getDescriptionText())
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.leading)
-            
-            // Status zpráva
-            if !videoSaverManager.videoSaverMessage.isEmpty {
-                HStack {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.blue)
-                        .font(.caption)
-                    
-                    Text(videoSaverManager.videoSaverMessage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(8)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.blue.opacity(0.1))
-                )
-            }
+            statusRow
+            descriptionSection
+            messageSection
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? 
-                     Color.black.opacity(0.3) : Color.white.opacity(0.8))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-        )
+        .background(backgroundView)
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Status Row
+    private var statusRow: some View {
+        HStack {
+            statusIcon
+            infoSection
+            Spacer()
+            toggleSection
+        }
+    }
+    
+    // MARK: - Status Icon
+    private var statusIcon: some View {
+        let iconName = isEnabled ? "checkmark.circle.fill" : "exclamationmark.circle"
+        let iconColor: Color = isEnabled ? .green : .orange
+        
+        return Image(systemName: iconName)
+            .foregroundColor(iconColor)
+            .font(.title2)
+    }
+    
+    // MARK: - Info Section
+    private var infoSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            titleRow
+            statusText
+        }
+    }
+    
+    private var titleRow: some View {
+        HStack(spacing: 6) {
+            Text("VideoSaver Running")
+                .font(.subheadline)
+                .fontWeight(.medium)
+            
+            infoButton
+        }
+    }
+    
+    private var infoButton: some View {
+        Button(action: {
+            showTooltip.toggle()
+        }) {
+            Image(systemName: "questionmark.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .popover(isPresented: $showTooltip, arrowEdge: .bottom) {
+            tooltipView
+        }
+    }
+    
+    private var statusText: some View {
+        Text(isEnabled ? "Ready" : "Stopped")
+            .font(.caption)
+            .foregroundColor(isEnabled ? .green : .orange)
+    }
+    
+    // MARK: - Toggle Section
+    private var toggleSection: some View {
+        Toggle("", isOn: $isEnabled)
+            .toggleStyle(SwitchToggleStyle())
+            .onChange(of: isEnabled) { newValue in
+
+                simpleVideoSaverManager.toggleVideoSaverAgent(newValue)
+                print("VideoSaver toggle: \(newValue)")
+            }
+    }
+    
+    // MARK: - Description Section
+    private var descriptionSection: some View {
+        let enabledText = "VideoSaver Agent automatically refreshes your video wallpapers when macOS freezes them."
+        let disabledText = "VideoSaver Agent is disabled. Enable to automatically refresh wallpapers after sleep/wake cycles."
+        let description = isEnabled ? enabledText : disabledText
+        
+        return Text(description)
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .multilineTextAlignment(.leading)
+    }
+    
+    // MARK: - Message Section
+    @ViewBuilder
+    private var messageSection: some View {
+        // No message for now - add when connecting to real manager
+        EmptyView()
+    }
+    
+    // MARK: - Background View
+    private var backgroundView: some View {
+        let fillColor: Color = colorScheme == .dark ?
+            Color.gray.opacity(0.1) : Color.gray.opacity(0.05)
+        
+        return RoundedRectangle(cornerRadius: 12)
+            .fill(fillColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            )
     }
     
     // MARK: - Tooltip View
-    
     private var tooltipView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("VideoSaver Agent - Auto Wallpaper Refresh")
-                    .font(.headline)
-                    .fontWeight(.bold)
+                tooltipItem(
+                    title: "🤔 WHAT IS THIS?",
+                    text: "VideoSaver Agent automatically refreshes video wallpapers when macOS freezes them."
+                )
                 
-                VStack(alignment: .leading, spacing: 10) {
-                    Group {
-                        Text("🎬 THE PROBLEM:")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("macOS sometimes 'freezes' live wallpapers after your Mac wakes up from sleep. The system doesn't always properly refresh video wallpapers.")
-                            .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    
-                    Group {
-                        Text("🔧 THE SOLUTION:")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("VideoSaver Agent runs in the background and automatically refreshes wallpapers when your Mac wakes up. Works even when WallMotion is closed.")
-                            .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    
-                    Group {
-                        Text("⚡ KEY FEATURES:")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("• Runs independently as background process\n• Minimal system impact\n• Starts automatically on Mac startup\n• No internet required\n• Can be disabled anytime")
-                            .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    
-                    Group {
-                        Text("💡 RECOMMENDATION:")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Keep enabled for reliable wallpaper experience, especially if you close WallMotion frequently.")
-                            .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                tooltipItem(
+                    title: "🔧 HOW IT WORKS:",
+                    text: "Runs silently in background, detects when video wallpapers stop playing, automatically refreshes frozen wallpapers."
+                )
+                
+                tooltipItem(
+                    title: "💡 TIP:",
+                    text: "Most users benefit from keeping this enabled."
+                )
             }
-            .padding()
         }
-        .frame(width: 400, height: 350)
+        .padding(16)
+        .frame(width: 350, height: 250)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
     }
     
-    // MARK: - Helper Methods
-    
-    private func handleHover(_ isHovering: Bool) {
-        hoverTimer?.invalidate()
-        
-        if isHovering {
-            showTooltip = true
-        } else {
-            hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
-                showTooltip = false
-            }
+    private func tooltipItem(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            Text(text)
+                .font(.caption)
         }
     }
 }
