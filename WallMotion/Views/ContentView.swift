@@ -403,6 +403,9 @@ struct ContentView: View {
             Divider()
                 .padding(.horizontal)
             
+            SimpleVideoSaverView()
+                .padding(.vertical, 8)
+            
             // Help & Tutorial section
             helpSection
             
