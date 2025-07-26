@@ -27,16 +27,6 @@ struct TutorialView: View {
     
     // REFACTORED: Simplified tutorial steps without installation
     private let tutorialSteps: [TutorialStep] = [
-        // INFO: Bundle tools verification (replaces installation step)
-        TutorialStep(
-            title: "YouTube Import Tools",
-            subtitle: "Check bundled video processing tools",
-            content: "WallMotion includes bundled tools (yt-dlp, ffmpeg) for YouTube video import. These tools are automatically available - no installation required! You can use the diagnostics to verify they're working properly.",
-            icon: "cube.box.fill",
-            imagePlaceholder: "",
-            stepType: .setup
-        ),
-        
         TutorialStep(
             title: "Open System Settings",
             subtitle: "Navigate to Wallpaper settings",
@@ -222,11 +212,12 @@ struct TutorialView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    
+                    /*
                     // Show bundle status for first step
                     if currentStep == 0 {
                         compactBundleStatusSection
                     }
+                     */
                 }
                 .padding(.horizontal, 16)
             }
@@ -280,9 +271,11 @@ struct TutorialView: View {
             .frame(maxWidth: 700) // Consistent max width
             
             // Special content section for step 0 only
+            /*
             if currentStep == 0 {
                 bundleStatusSection
             }
+             */
         }
         .frame(maxWidth: .infinity)
     }
