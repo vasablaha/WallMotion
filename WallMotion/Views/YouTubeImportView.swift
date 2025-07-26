@@ -2,7 +2,7 @@
 //  YouTubeImportView.swift
 //  WallMotion
 //
-//  Main YouTube Import View - Final version with complete loading states
+//  Main YouTube Import View - Final version with enhanced progress tracking
 //
 
 import SwiftUI
@@ -10,6 +10,7 @@ import AVKit
 
 struct YouTubeImportView: View {
     @StateObject private var importManager = YouTubeImportManager()
+    @StateObject private var conversionTracker = ConversionProgressTracker() // ✅ NOVÝ TRACKER
     @State private var youtubeURL = ""
     @State private var showingVideoInfo = false
     @State private var showingTimeSelector = false
@@ -23,7 +24,6 @@ struct YouTubeImportView: View {
     @State private var diagnosticsReport = ""
     @State private var isAnalyzing = false
 
-    
     let onVideoReady: (URL) -> Void
     
     var body: some View {
@@ -36,7 +36,7 @@ struct YouTubeImportView: View {
                     importManager: importManager,
                     showingTimeSelector: showingTimeSelector,
                     isProcessing: isProcessing,
-                    isFetchingVideoInfo: isFetchingVideoInfo  // NEW: Pass loading state
+                    isFetchingVideoInfo: isFetchingVideoInfo
                 )
                 
                 if importManager.downloadedVideoURL == nil {
@@ -51,14 +51,12 @@ struct YouTubeImportView: View {
                     OptimizedYouTubeVideoPreviewSection(videoURL: importManager.downloadedVideoURL!)
                 }
                 
-                // ✅ A v YouTubeImportView.swift předejte isProcessing parametr:
-
                 if showingVideoInfo {
                     YouTubeVideoInfoSection(
                         importManager: importManager,
                         onDownloadVideo: downloadVideo,
                         onCancelDownload: { importManager.cancelDownload() },
-                        isProcessing: isProcessing  // ✅ PŘIDÁNO
+                        isProcessing: isProcessing
                     )
                 }
                 
@@ -68,11 +66,14 @@ struct YouTubeImportView: View {
                     )
                 }
                 
-                if isProcessing {
+                // ✅ UPRAVENÉ PROCESSING SECTIONS
+                if isProcessing && conversionTracker.progressInfo.state == .preparing {
                     YouTubeProcessingSection(
                         progress: processingProgress,
                         message: processingMessage
                     )
+                } else if isProcessing {
+                    EnhancedYouTubeProcessingSection(progressTracker: conversionTracker)
                 }
                 
                 YouTubeActionButtonsSection(
@@ -90,29 +91,11 @@ struct YouTubeImportView: View {
         } message: {
             Text(dependencyMessage)
         }
-        /*
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 12) {
-                    // Existing buttons...
-                    
-                    // NOVÝ: Diagnostics button
-                    Button(action: {
-                        showingDiagnostics = true
-                    }) {
-                        HStack {
-                            Image(systemName: "stethoscope")
-                            Text("Diagnostics")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
+        .onAppear {
+            // ✅ PROPOJENÍ TRACKERŮ
+            importManager.conversionTracker = conversionTracker
         }
-         */
     }
-    
-    
     
     private func fetchVideoInfo() {
         guard !isProcessing && !isFetchingVideoInfo else { return }
@@ -164,20 +147,26 @@ struct YouTubeImportView: View {
         print("📥 User initiated download for: \(youtubeURL)")
         
         isProcessing = true
-        isAnalyzing = false  // ✅ Reset analyzing state
+        isAnalyzing = false
         processingProgress = 0.0
         processingMessage = "Starting download..."
+        conversionTracker.reset() // ✅ RESET TRACKERU
         
         Task {
             do {
                 _ = try await importManager.downloadVideo(from: youtubeURL) { progress, message in
                     DispatchQueue.main.async {
-                        // ✅ SPRÁVNÉ rozlišování mezi stahováním a analýzou
+                        // ✅ ROZLIŠOVÁNÍ MEZI DOWNLOAD A CONVERSION
                         if progress < 0 {
                             // -1 znamená nekonečný spinner (analýza/konverze)
-                            self.isAnalyzing = true
-                            self.processingProgress = 0.5  // Statický progress pro spinner
-                            self.processingMessage = message
+                            if message.contains("Converting to H.264") || message.contains("Optimizing") {
+                                // Nech ConversionTracker zpracovat toto
+                                return
+                            } else {
+                                self.isAnalyzing = true
+                                self.processingProgress = 0.5
+                                self.processingMessage = message
+                            }
                         } else {
                             // Normální progress stahování
                             self.isAnalyzing = false
@@ -191,7 +180,7 @@ struct YouTubeImportView: View {
                 
                 await MainActor.run {
                     isProcessing = false
-                    isAnalyzing = false  // ✅ Reset na konci
+                    isAnalyzing = false
                     print("✅ Download + conversion completed")
                     
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -203,7 +192,13 @@ struct YouTubeImportView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
-                    isAnalyzing = false  // ✅ Reset při chybě
+                    isAnalyzing = false
+                    conversionTracker.updateProgress(
+                        state: .failed,
+                        currentTime: 0,
+                        totalTime: 0,
+                        rawMessage: error.localizedDescription
+                    )
                     print("❌ Download failed: \(error)")
                     if let ytError = error as? YouTubeError {
                         dependencyMessage = ytError.errorDescription ?? "Download failed"
@@ -280,6 +275,7 @@ struct YouTubeImportView: View {
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             importManager.cleanup()
+            conversionTracker.reset() // ✅ RESET TRACKERU
             youtubeURL = ""
             showingVideoInfo = false
             showingTimeSelector = false
