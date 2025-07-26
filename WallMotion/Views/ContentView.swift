@@ -214,8 +214,6 @@ struct ContentView: View {
     
     private var mainAppView: some View {
         VStack(spacing: 0) {
-            // ✅ NOVÝ: Top bar s Account Dropdown
-            topBarView
             
             // Existující NavigationView
             NavigationView {
@@ -275,40 +273,7 @@ struct ContentView: View {
             checkForFirstTimeTutorial()
         }
     }
-    
-    private var topBarView: some View {
-        HStack {
-            // Logo a název
-            HStack(spacing: 12) {
-                Image("logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                
-                Text("WallMotion")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .fontDesign(.rounded)
-            }
-            
-            Spacer()
-            
-            // Account Dropdown - jen pokud je uživatel přihlášený
-            if authManager.isAuthenticated {
-                AccountDropdownView()
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(Color.primary.opacity(0.1)),
-            alignment: .bottom
-        )
-    }
-    
+
     // MARK: - Main Content View
     
     private var mainContentView: some View {
