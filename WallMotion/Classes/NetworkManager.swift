@@ -189,6 +189,27 @@ class NetworkManager: ObservableObject {
             responseType: UserResponse.self
         )
     }
+    
+    // MARK: - Version Check Methods (NOVÉ)
+    
+    func checkAppVersion() async throws -> VersionCheckResponse {
+        guard let currentVersion = getCurrentAppVersion() else {
+            throw NetworkError.serverError("Unable to get current app version")
+        }
+        
+        let bundleId = "tapp-studio.WallMotion"
+        let endpoint = "/version-check?current_version=\(currentVersion)&bundle_id=\(bundleId)"
+        
+        return try await performRequest(
+            endpoint: endpoint,
+            method: .GET,
+            responseType: VersionCheckResponse.self
+        )
+    }
+    
+    private func getCurrentAppVersion() -> String? {
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    }
 }
 
 // MARK: - HTTP Method Enum
@@ -263,8 +284,6 @@ struct LicenseInfo: Codable {
     let deviceInfo: DeviceInfo?
 }
 
-
-
 struct DeviceRegistrationResponse: Codable {
     let success: Bool
     let device: Device?
@@ -328,7 +347,23 @@ struct User: Codable {
     }
 }
 
-    struct LogoutResponse: Codable {
-        let success: Bool
-        let message: String?
-    }
+struct LogoutResponse: Codable {
+    let success: Bool
+    let message: String?
+}
+
+// MARK: - Version Check Models (NOVÉ)
+
+struct VersionCheckResponse: Codable {
+    let hasUpdate: Bool
+    let currentVersion: String?
+    let latest: LatestVersionInfo?
+    let error: String?
+}
+
+struct LatestVersionInfo: Codable {
+    let version: String
+    let downloadUrl: String
+    let releaseNotes: [String]
+    let forceUpdate: Bool
+}

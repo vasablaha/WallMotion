@@ -414,6 +414,13 @@ struct ContentView: View {
             // Help & Tutorial section
             helpSection
             
+            Divider()
+                .padding(.horizontal)
+            
+            Spacer()
+            
+            VersionCheckView()
+            
             Spacer()
             
             // ❌ ODSTRAŇTE: userInfoFooter - přesunuto do dropdown
