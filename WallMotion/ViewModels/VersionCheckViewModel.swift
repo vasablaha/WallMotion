@@ -38,9 +38,9 @@ class VersionCheckViewModel: ObservableObject {
     
     private func showUpdateAlert(latest: LatestVersionInfo) {
         let alert = NSAlert()
-        alert.messageText = latest.forceUpdate ? "Povinná aktualizace" : "Nová verze dostupná"
+        alert.messageText = latest.forceUpdate ? "Mandatory update" : "New version available"
         
-        var message = "Je dostupná nová verze \(latest.version)."
+        var message = "A new version is available \(latest.version)."
         
         if !latest.releaseNotes.isEmpty {
             message += "\n\nCo je nového:\n"
@@ -50,9 +50,9 @@ class VersionCheckViewModel: ObservableObject {
         alert.informativeText = message
         alert.alertStyle = latest.forceUpdate ? .critical : .informational
         
-        alert.addButton(withTitle: "Stáhnout")
+        alert.addButton(withTitle: "Download")
         if !latest.forceUpdate {
-            alert.addButton(withTitle: "Později")
+            alert.addButton(withTitle: "Later")
         }
         
         let response = alert.runModal()
@@ -79,7 +79,7 @@ struct VersionCheckView: View {
     @StateObject private var viewModel = VersionCheckViewModel()
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             if viewModel.isLoading {
                 loadingView
             } else if let error = viewModel.errorMessage {
@@ -102,132 +102,177 @@ struct VersionCheckView: View {
     
     // MARK: - Loading View
     private var loadingView: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             ProgressView()
                 .scaleEffect(0.7)
-            Text("Kontroluji verzi...")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .progressViewStyle(CircularProgressViewStyle(tint: Color.white.opacity(0.7)))
+            
+            Text("I'm checking the version...")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.8))
         }
-        .padding(8)
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.25, green: 0.25, blue: 0.28))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
     
     // MARK: - Error View
     private func errorView(error: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundColor(.orange)
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(Color.orange)
+                    .font(.system(size: 14, weight: .medium))
                 
-                Text("Chyba kontroly verze")
-                    .font(.caption)
-                    .fontWeight(.medium)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Version control error")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color.white)
+                    
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.white.opacity(0.7))
+                        .lineLimit(2)
+                }
+                
+                Spacer()
             }
             
-            Button("Zkusit znovu") {
+            Button("Try again") {
                 viewModel.checkForUpdates()
             }
-            .font(.caption2)
-            .foregroundColor(.blue)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(Color.blue)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.blue.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 0))
         }
-        .padding(8)
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.25, green: 0.25, blue: 0.28))
+        .clipShape(RoundedRectangle(cornerRadius: 0))
     }
     
     // MARK: - Up to Date View
     private func upToDateView(version: String?) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
-                .font(.caption)
+        HStack(spacing: 10) {
+            // Green checkmark circle jako v screenshotu
+            ZStack {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 16, height: 16)
+                
+                Image(systemName: "checkmark")
+                    .foregroundColor(.white)
+                    .font(.system(size: 9, weight: .bold))
+            }
             
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Aktuální verze")
-                    .font(.caption)
-                    .fontWeight(.medium)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Current version")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Color.white)
                 
                 if let version = version {
                     Text("v\(version)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.white.opacity(0.7))
                 }
             }
             
             Spacer()
         }
-        .padding(8)
-        .background(Color.green.opacity(0.1))
-        .cornerRadius(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.25, green: 0.25, blue: 0.28))
+        .clipShape(RoundedRectangle(cornerRadius: 0))
     }
     
     // MARK: - Update Available View
     private func updateAvailableView(current: String?, latest: LatestVersionInfo) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundColor(latest.forceUpdate ? .red : .blue)
-                    .font(.caption)
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(latest.forceUpdate ? "Povinná aktualizace" : "Nová verze")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(latest.forceUpdate ? .red : .primary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                // Status indikátor
+                ZStack {
+                    Circle()
+                        .fill(latest.forceUpdate ? Color.red : Color.orange)
+                        .frame(width: 16, height: 16)
                     
-                    HStack(spacing: 4) {
+                    Image(systemName: latest.forceUpdate ? "exclamationmark" : "arrow.down")
+                        .foregroundColor(.white)
+                        .font(.system(size: 9, weight: .bold))
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(latest.forceUpdate ? "Mandatory update" : "New version available")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(latest.forceUpdate ? Color.red : Color.white)
+                    
+                    HStack(spacing: 6) {
                         if let current = current {
                             Text("v\(current)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.white.opacity(0.7))
                             
                             Image(systemName: "arrow.right")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 10))
+                                .foregroundColor(Color.white.opacity(0.5))
                         }
                         
                         Text("v\(latest.version)")
-                            .font(.caption2)
-                            .foregroundColor(latest.forceUpdate ? .red : .blue)
-                            .fontWeight(.medium)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(latest.forceUpdate ? Color.red : Color.orange)
                     }
                 }
                 
                 Spacer()
             }
             
-            Button("Stáhnout aktualizaci") {
+            Button("Download the update") {
                 viewModel.downloadUpdate(url: latest.downloadUrl)
             }
-            .font(.caption)
+            .font(.system(size: 12, weight: .medium))
             .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             .background(latest.forceUpdate ? Color.red : Color.blue)
-            .cornerRadius(4)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .padding(8)
-        .background((latest.forceUpdate ? Color.red : Color.blue).opacity(0.1))
-        .cornerRadius(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.25, green: 0.25, blue: 0.28))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
     
     // MARK: - Initial View
     private var initialView: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "info.circle")
-                .foregroundColor(.secondary)
-                .font(.caption)
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 16, height: 16)
+                
+                Image(systemName: "ellipsis")
+                    .foregroundColor(Color.white.opacity(0.7))
+                    .font(.system(size: 8, weight: .medium))
+            }
             
-            Text("Kontrola verzí...")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("Version control...")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.8))
+            
+            Spacer()
         }
-        .padding(8)
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.22, green: 0.22, blue: 0.25))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -238,7 +283,8 @@ struct VersionCheckView_Previews: PreviewProvider {
         VStack(spacing: 16) {
             VersionCheckView()
         }
-        .padding()
+        .padding(16)
+        .background(Color(red: 0.18, green: 0.18, blue: 0.20))
         .frame(width: 300)
     }
 }
