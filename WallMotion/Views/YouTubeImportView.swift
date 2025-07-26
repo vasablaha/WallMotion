@@ -90,6 +90,7 @@ struct YouTubeImportView: View {
         } message: {
             Text(dependencyMessage)
         }
+        /*
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
@@ -108,7 +109,7 @@ struct YouTubeImportView: View {
                 }
             }
         }
-        
+         */
     }
     
     
